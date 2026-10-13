@@ -144,3 +144,15 @@ Stacked analytic receiver traces with a shared arrival guide. [Source](../exampl
 ![Spherical cutaways](atmosphere.png)
 
 Interactive temperature, density and wind demonstration fields. [Source](../examples/atmosphere.rs)
+
+## KHI electron-density evolution
+
+![KHI electron-density evolution](syisr_khi_density.png)
+
+Two-hour Ri=0.08 model, following the mean zonal drift; no field clipping. [MP4](syisr_khi_density.mp4) · [PDF](syisr_khi_density.pdf) · [Rust source](../examples/syisr_khi.rs)
+
+## Ion drift and background shear
+
+![Ion drift and background shear](syisr_khi_ion_up.png)
+
+Upward magnetic ion drift with an aligned background-wind profile. Simulated, not an observed fit. [MP4](syisr_khi_ion_up.mp4) · [PDF](syisr_khi_ion_up.pdf) · [Rust source](../examples/syisr_khi.rs)

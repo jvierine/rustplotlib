@@ -17,10 +17,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: sudo apt-get update && sudo apt-get install -y texlive-latex-extra texlive-fonts-recommended dvisvgm poppler-utils
+      - run: sudo apt-get update && sudo apt-get install -y texlive-latex-extra texlive-fonts-recommended dvisvgm poppler-utils libhdf5-dev
       - run: cargo fmt --all --check && cargo test
       - run: cargo run --release --example publication
       - run: cargo run --release --example gallery
+      - run: cargo run --release --features hdf5-examples --example syisr_khi
       - run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
       - run: npm ci && npx playwright install --with-deps chromium && npm run build && npx tsc --noEmit
       - run: |

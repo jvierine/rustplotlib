@@ -33,8 +33,8 @@ try{
  await page.setViewportSize({width:1280,height:1000});await page.goto('http://127.0.0.1:8791/gallery/index.html');
  await page.evaluate(()=>document.querySelectorAll('img').forEach(img=>img.loading='eager'));
  await page.waitForFunction(()=>Array.from(document.querySelectorAll('img')).every(img=>img.complete&&img.naturalWidth>0));
- const cards=await page.locator('main article').count();if(cards!==21)throw Error('Gallery must contain twenty-one examples');
- const hrefs=await page.locator('a').evaluateAll(links=>links.map(a=>a.href).filter(url=>url.startsWith(location.origin)&&/\.(pdf|png|svg)$/.test(url)));
+ const cards=await page.locator('main article').count();if(cards!==23)throw Error('Gallery must contain twenty-three examples');
+ const hrefs=await page.locator('a').evaluateAll(links=>links.map(a=>a.href).filter(url=>url.startsWith(location.origin)&&/\.(pdf|png|svg|mp4)$/.test(url)));
  for(const url of hrefs){const response=await page.request.get(url);if(!response.ok())throw Error('Broken gallery download: '+url);}
  await page.screenshot({path:'validation/gallery-desktop.png',fullPage:true});await page.setViewportSize({width:390,height:844});
  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Mobile gallery overflows horizontally');

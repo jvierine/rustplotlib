@@ -13,6 +13,7 @@ default-members = ["."]
 [features]
 default = ["export"]
 export = ["dep:resvg", "dep:svg2pdf"]
+hdf5-examples = ["dep:hdf5"]
 
 [dependencies]
 anyhow = "1"
@@ -24,6 +25,12 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 png = "0.18"
 resvg = { version = "0.45", optional = true }
 svg2pdf = { version = "0.13", optional = true }
+
+hdf5 = { package = "hdf5-metno", version = "0.12", optional = true }
+
+[[example]]
+name = "syisr_khi"
+required-features = ["export", "hdf5-examples"]
 
 [profile.release]
 lto = "thin"

@@ -442,6 +442,21 @@ fn index() -> Result<()> {
             "## {title}\n\n![{title}]({image})\n\n{description} [Source](../{source})\n\n"
         ));
     }
+    for (name, title, description) in [
+        (
+            "syisr_khi_density",
+            "KHI electron-density evolution",
+            "Two-hour Ri=0.08 model, following the mean zonal drift; no field clipping.",
+        ),
+        (
+            "syisr_khi_ion_up",
+            "Ion drift and background shear",
+            "Upward magnetic ion drift with an aligned background-wind profile. Simulated, not an observed fit.",
+        ),
+    ] {
+        html.push_str(&format!(r#"<article><h2>{title}</h2><video controls playsinline preload="metadata" poster="{name}.png" style="width:100%;height:auto"><source src="{name}.mp4" type="video/mp4"></video><p>{description}</p><div class="links"><a href="{name}.mp4">MP4</a><a href="{name}.pdf">Scientific PDF</a><a href="https://github.com/jvierine/rustplotlib/blob/main/examples/syisr_khi.rs">Rust source</a></div></article>"#));
+        md.push_str(&format!("## {title}\n\n![{title}]({name}.png)\n\n{description} [MP4]({name}.mp4) · [PDF]({name}.pdf) · [Rust source](../examples/syisr_khi.rs)\n\n"));
+    }
     html.push_str("</main></html>");
     fs::write("gallery/index.html", html)?;
     fs::write("gallery/README.md", md.trim_end().to_owned() + "\n")?;
