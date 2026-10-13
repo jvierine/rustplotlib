@@ -1,5 +1,7 @@
 # rustplotlib
 
+[Live gallery](https://jvierine.github.io/rustplotlib/gallery/index.html) · [Examples](gallery/README.md)
+
 Scientific figures with LaTeX typography. Rust renders the geometry; LaTeX
 typesets every label, tick and equation. PDF keeps text and curves as vectors.
 
@@ -55,3 +57,5 @@ See [the API notes](docs/API.md) for coordinates, normalization and embedding.
 
 [Live gallery](https://jvierine.github.io/rustplotlib/gallery/index.html) · [Examples](gallery/README.md): KHI, HEIMDALL maps, spherical cutaways,
 3-D functions and Dimant–Oppenheim density.
+
+Scientific exports crop to visible content by default with 2 mm padding (`Figure::tight_export`, `Figure::export_padding_mm`). Set `tight_export=false` for a fixed page. Surface geometry fills its panel by default (`Surface::fit_to_view`); disable it to retain the unit-cube camera framing. HEIMDALL Scientific PNG exports the WebGL figure and labelled colour bar without page UI.

@@ -51,7 +51,7 @@ fn main() -> Result<()> {
             .collect::<Vec<_>>(),
     )?;
     let mut f = Figure::new(IntendedUse::ArticleWide);
-    f.height_mm = 113.0;
+    f.height_mm = 122.0;
     let sc = f.scale(Scale::new(
         [1e-3, 1e4],
         Normalization::Log,
@@ -68,7 +68,7 @@ fn main() -> Result<()> {
                 .collect(),
         )?,
     )?);
-    let rect = Rect::new(15.0, 12.0, 90.0, 72.0);
+    let rect = Rect::new(15.0, 12.0, 86.0, 72.0);
     let mut axes = Axes::new(
         [-5.0, 20.0],
         [-10.0, 10.0],
@@ -89,15 +89,20 @@ fn main() -> Result<()> {
     f.labels
         .push(Label::new(r"Dimant--Oppenheim density", 58., 5.));
     let mut bar = Colorbar::new(
-        Rect::new(15., 99., 90., 2.),
+        Rect::new(15., 99., 86., 2.),
         sc,
-        r"$8\pi\,n_e/n_*$",
+        r"$\mathcal N\equiv 8\pi n_e/n_*$",
         vec![1e-3, 1e-1, 10., 10000.],
     );
     bar.horizontal = true;
     f.colorbars.push(bar);
-    // Directly labelled downstream profiles; log ordinate is explicit.
-    let rect = Rect::new(141., 18., 30., 56.);
+    f.labels.push(Label::new(
+        r"$\mathcal N$: dimensionless density; $n_*$: reference density scale",
+        89.,
+        118.,
+    ));
+    // Matched-height panels with golden-ratio widths; log ordinate is explicit.
+    let rect = Rect::new(121., 12., 86. / 1.618033988749895, 72.);
     let mut axes = Axes::new(
         [0., 20.],
         [-3., 4.],
@@ -119,7 +124,7 @@ fn main() -> Result<()> {
             })
             .collect();
         p.push(Layer::Line(Line::new(points, color)));
-        let mut label = Label::new(format!(r"$r/\lambda_T={r}$"), 156., 22. + offset);
+        let mut label = Label::new(format!(r"$r/\lambda_T={r}$"), 148., 18. + offset);
         label.color = color.into();
         p.labels.push(label);
     }
@@ -141,7 +146,7 @@ fn main() -> Result<()> {
         }
     }
     let mut f = Figure::new(IntendedUse::ArticleColumn);
-    f.height_mm = 90.;
+    f.height_mm = 68.;
     let sc = f.scale(Scale::new(
         [-3., 4.],
         Normalization::Linear,
@@ -160,15 +165,21 @@ fn main() -> Result<()> {
     )?);
     let s = Surface::new(xs, ys, z, [-3., 4.], sc)?;
     let mut p = Panel::new(
-        Rect::new(5., 12., 75., 65.),
+        Rect::new(5., 12., 75., 40.),
         Axes::new([0., 1.], [0., 1.], "", ""),
     );
     p.axes = None;
     p.push(Layer::Surface(s));
     f.panels.push(p);
     f.labels.push(Label::new(r"Dimant--Oppenheim", 42., 5.));
-    f.labels
-        .push(Label::new(r"Height: $\log_{10}(8\pi n_e/n_*)$", 42., 83.));
+    let mut bar = Colorbar::new(
+        Rect::new(13., 55., 59., 2.),
+        sc,
+        r"$\log_{10}(8\pi n_e/n_*)$",
+        vec![-3., -1., 1., 3., 4.],
+    );
+    bar.horizontal = true;
+    f.colorbars.push(bar);
     f.save("gallery/dimant_surface.pdf")?;
     f.save("gallery/dimant_surface.png")?;
     Ok(())

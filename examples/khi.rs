@@ -150,14 +150,14 @@ fn figure(data: &[f64], time: f64) -> Result<Figure> {
     p.push(Layer::Pcolormesh(field));
     f.panels.push(p);
     let mut bar = Colorbar::new(
-        Rect::new(15., 79., 60., 1.5),
+        Rect::new(15., 89., 60., 1.5),
         scale,
         r"Dye fraction $c$",
         vec![0., 0.5, 1.],
     );
     bar.horizontal = true;
     f.colorbars.push(bar);
-    f.height_mm = 98.0;
+    f.height_mm = 110.0;
     f.labels.push(Label::new(
         format!(r"Kelvin--Helmholtz $\quad t={time:.1}$"),
         45.,

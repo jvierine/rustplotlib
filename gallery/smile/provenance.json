@@ -1,0 +1,15 @@
+{
+  "display_mask": "northern QD latitude >60 degrees; original footprint retained in HDF5",
+  "earth_texture_sha256": "2faa400d1eade3bc44caf6750d1b772bd9bbb6d87362c02bc7c3304e78fa0a9d",
+  "source": "https://juha.no/smile/frames/025.png",
+  "source_sha256": "083956e1a3c0d233e507c3804fe461eaf537cdec1dec542594986a2e49cedc71",
+  "utc": "2026-07-24T00:25:08Z",
+  "emission_altitude_km": 110,
+  "calibration_quality": "star-fit-candidate",
+  "optmod": 20,
+  "lens": "existing Brown-Conrady star-track fit, not refitted",
+  "script": "scripts/prepare_smile.py",
+  "units": "processed RGB; not calibrated radiance",
+  "grid": "cell centres, latitude south to north; longitude -180 to 180",
+  "visible_pixels": 249567
+}

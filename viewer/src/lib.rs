@@ -302,6 +302,7 @@ impl Drop for FieldView {
 
 #[wasm_bindgen]
 pub struct VolumeView {
+    auto_draw: std::cell::Cell<bool>,
     gl: Gl,
     canvas: HtmlCanvasElement,
     p: WebGlProgram,
@@ -326,7 +327,13 @@ impl VolumeView {
             1.0,
             1.0,
         );
-        Ok(Self { gl, canvas, p, t })
+        Ok(Self {
+            auto_draw: std::cell::Cell::new(true),
+            gl,
+            canvas,
+            p,
+            t,
+        })
     }
     pub fn set_data(&self, nx: u32, ny: u32, nz: u32, values: &[f32]) -> Result<(), JsValue> {
         if [nx, ny, nz].iter().any(|x| *x < 2)
@@ -421,7 +428,14 @@ impl VolumeView {
         self.draw();
         Ok(())
     }
+    /// Batch data, transfer and camera changes before one GPU draw.
+    pub fn set_auto_draw(&self, enabled: bool) {
+        self.auto_draw.set(enabled);
+    }
     pub fn draw(&self) {
+        if !self.auto_draw.get() {
+            return;
+        }
         self.gl.use_program(Some(&self.p));
         self.gl.active_texture(Gl::TEXTURE0);
         self.gl.bind_texture(Gl::TEXTURE_3D, Some(&self.t));
@@ -441,5 +455,204 @@ impl Drop for VolumeView {
     fn drop(&mut self) {
         self.gl.delete_texture(Some(&self.t));
         self.gl.delete_program(Some(&self.p));
+    }
+}
+
+/// Colored 3-D line geometry, e.g. traced vector fields. Coordinates stay in
+/// physical units; the camera centre and extent use those same units.
+#[wasm_bindgen]
+pub struct PathView {
+    gl: Gl,
+    canvas: HtmlCanvasElement,
+    p: WebGlProgram,
+    paths: web_sys::WebGlBuffer,
+    earth: web_sys::WebGlBuffer,
+    count: i32,
+    earth_count: i32,
+}
+#[wasm_bindgen]
+impl PathView {
+    #[wasm_bindgen(constructor)]
+    pub fn new(canvas: HtmlCanvasElement) -> Result<PathView, JsValue> {
+        let gl = context(&canvas)?;
+        let p = gl
+            .create_program()
+            .ok_or_else(|| error("Cannot allocate path program"))?;
+        let a = shader(&gl, Gl::VERTEX_SHADER, include_str!("path.vert"))?;
+        let b = shader(&gl, Gl::FRAGMENT_SHADER, include_str!("path.frag"))?;
+        gl.attach_shader(&p, &a);
+        gl.attach_shader(&p, &b);
+        gl.link_program(&p);
+        if gl.get_program_parameter(&p, Gl::LINK_STATUS).as_bool() != Some(true) {
+            return Err(error(gl.get_program_info_log(&p).unwrap_or_default()));
+        }
+        gl.delete_shader(Some(&a));
+        gl.delete_shader(Some(&b));
+        let paths = gl
+            .create_buffer()
+            .ok_or_else(|| error("Cannot allocate paths"))?;
+        let earth = gl
+            .create_buffer()
+            .ok_or_else(|| error("Cannot allocate Earth"))?;
+        let mut sphere = Vec::new();
+        let point = |i: usize, j: usize| {
+            let a = std::f32::consts::TAU * i as f32 / 64.;
+            let b = std::f32::consts::PI * (j as f32 / 32. - 0.5);
+            [b.cos() * a.cos(), b.cos() * a.sin(), b.sin()]
+        };
+        for j in 0..32 {
+            for i in 0..64 {
+                for q in [
+                    point(i, j),
+                    point(i + 1, j),
+                    point(i + 1, j + 1),
+                    point(i, j),
+                    point(i + 1, j + 1),
+                    point(i, j + 1),
+                ] {
+                    let light = (0.35 + 0.65 * (q[0] * 0.6 + q[1] * 0.1 + q[2] * 0.7).max(0.))
+                        .clamp(0.0, 1.0);
+                    sphere.extend_from_slice(&q);
+                    sphere.extend_from_slice(&[0.22 * light, 0.45 * light, 0.58 * light]);
+                }
+            }
+        }
+        gl.bind_buffer(Gl::ARRAY_BUFFER, Some(&earth));
+        let arr = js_sys::Float32Array::from(sphere.as_slice());
+        gl.buffer_data_with_array_buffer_view(Gl::ARRAY_BUFFER, &arr, Gl::STATIC_DRAW);
+        gl.use_program(Some(&p));
+        uniform2(&gl, &p, "camera", -0.9, 0.45);
+        uniform1(&gl, &p, "extent", 34.);
+        gl.uniform3f(gl.get_uniform_location(&p, "centre").as_ref(), -7., 0., 0.);
+        Ok(Self {
+            gl,
+            canvas,
+            p,
+            paths,
+            earth,
+            count: 0,
+            earth_count: (sphere.len() / 6) as i32,
+        })
+    }
+    pub fn set_paths(&mut self, xyz_rgb: &[f32]) -> Result<(), JsValue> {
+        if xyz_rgb.len() % 12 != 0 || !xyz_rgb.iter().all(|x| x.is_finite()) {
+            return Err(error("Line segments require two XYZ/RGB vertices each"));
+        }
+        self.gl.bind_buffer(Gl::ARRAY_BUFFER, Some(&self.paths));
+        let arr = js_sys::Float32Array::from(xyz_rgb);
+        self.gl
+            .buffer_data_with_array_buffer_view(Gl::ARRAY_BUFFER, &arr, Gl::DYNAMIC_DRAW);
+        self.count = (xyz_rgb.len() / 6) as i32;
+        self.draw();
+        Ok(())
+    }
+    pub fn set_camera(&self, yaw: f32, pitch: f32, extent: f32) -> Result<(), JsValue> {
+        if ![yaw, pitch, extent].iter().all(|v| v.is_finite()) || extent <= 0.0 {
+            return Err(error("Invalid path camera"));
+        }
+        self.gl.use_program(Some(&self.p));
+        uniform2(&self.gl, &self.p, "camera", yaw, pitch);
+        uniform1(&self.gl, &self.p, "extent", extent);
+        self.draw();
+        Ok(())
+    }
+    pub fn draw(&self) {
+        let gl = &self.gl;
+        gl.viewport(
+            0,
+            0,
+            self.canvas.width() as i32,
+            self.canvas.height() as i32,
+        );
+        gl.use_program(Some(&self.p));
+        uniform1(
+            gl,
+            &self.p,
+            "aspect",
+            self.canvas.width() as f32 / self.canvas.height() as f32,
+        );
+        gl.enable(Gl::DEPTH_TEST);
+        gl.clear_color(1., 1., 1., 1.);
+        gl.clear(Gl::COLOR_BUFFER_BIT | Gl::DEPTH_BUFFER_BIT);
+        for (buffer, count, mode) in [
+            (&self.earth, self.earth_count, Gl::TRIANGLES),
+            (&self.paths, self.count, Gl::LINES),
+        ] {
+            gl.bind_buffer(Gl::ARRAY_BUFFER, Some(buffer));
+            for (name, offset) in [("position", 0), ("rgb", 12)] {
+                let a = gl.get_attrib_location(&self.p, name) as u32;
+                gl.enable_vertex_attrib_array(a);
+                gl.vertex_attrib_pointer_with_i32(a, 3, Gl::FLOAT, false, 24, offset);
+            }
+            gl.draw_arrays(mode, 0, count);
+        }
+        gl.disable(Gl::DEPTH_TEST);
+    }
+}
+
+/// Geographic RGBA layers on a rotatable globe. Input rows run south to north
+/// and columns run west to east from -180 to 180 degrees.
+#[wasm_bindgen]
+pub struct GlobeView {
+    gl: Gl,
+    canvas: HtmlCanvasElement,
+    p: WebGlProgram,
+    t: WebGlTexture,
+}
+#[wasm_bindgen]
+impl GlobeView {
+    #[wasm_bindgen(constructor)]
+    pub fn new(canvas: HtmlCanvasElement) -> Result<GlobeView, JsValue> {
+        let gl = context(&canvas)?;
+        let p = program(&gl, include_str!("globe.frag"))?;
+        let t = texture(&gl, Gl::TEXTURE_2D)?;
+        gl.tex_parameteri(Gl::TEXTURE_2D, Gl::TEXTURE_MIN_FILTER, Gl::LINEAR as i32);
+        gl.tex_parameteri(Gl::TEXTURE_2D, Gl::TEXTURE_MAG_FILTER, Gl::LINEAR as i32);
+        gl.tex_parameteri(Gl::TEXTURE_2D, Gl::TEXTURE_WRAP_S, Gl::REPEAT as i32);
+        gl.use_program(Some(&p));
+        uniform2(&gl, &p, "camera", -0.9, 0.9);
+        Ok(Self { gl, canvas, p, t })
+    }
+    pub fn set_rgba(&self, width: u32, height: u32, rgba: &[u8]) -> Result<(), JsValue> {
+        if width == 0 || height == 0 || rgba.len() != width as usize * height as usize * 4 {
+            return Err(error("Invalid globe image dimensions"));
+        }
+        self.gl.active_texture(Gl::TEXTURE0);
+        self.gl.bind_texture(Gl::TEXTURE_2D, Some(&self.t));
+        self.gl
+            .tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
+                Gl::TEXTURE_2D,
+                0,
+                Gl::RGBA as i32,
+                width as i32,
+                height as i32,
+                0,
+                Gl::RGBA,
+                Gl::UNSIGNED_BYTE,
+                Some(rgba),
+            )?;
+        self.draw();
+        Ok(())
+    }
+    pub fn set_camera(&self, yaw: f32, pitch: f32) -> Result<(), JsValue> {
+        if !yaw.is_finite() || !pitch.is_finite() {
+            return Err(error("Invalid globe camera"));
+        }
+        self.gl.use_program(Some(&self.p));
+        uniform2(&self.gl, &self.p, "camera", yaw, pitch);
+        self.draw();
+        Ok(())
+    }
+    pub fn draw(&self) {
+        self.gl.use_program(Some(&self.p));
+        self.gl.active_texture(Gl::TEXTURE0);
+        self.gl.bind_texture(Gl::TEXTURE_2D, Some(&self.t));
+        uniform1(
+            &self.gl,
+            &self.p,
+            "aspect",
+            self.canvas.width() as f32 / self.canvas.height() as f32,
+        );
+        finish(&self.gl, &self.p, &self.canvas);
     }
 }

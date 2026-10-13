@@ -1,0 +1,6 @@
+import init,{GlobeView} from '../pkg/rustplotlib_web.js';
+await init();const canvas=document.querySelector<HTMLCanvasElement>('#smile')!,view=new GlobeView(canvas);
+const image=new Image();image.src='gallery/smile/earth_uvi.png';await image.decode();const temp=document.createElement('canvas');temp.width=image.width;temp.height=image.height;const ctx=temp.getContext('2d')!;ctx.drawImage(image,0,0);view.set_rgba(image.width,image.height,new Uint8Array(ctx.getImageData(0,0,image.width,image.height).data));
+let yaw=-.9,pitch=.9,drag:[number,number]|null=null;canvas.onpointerdown=e=>{drag=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId);};canvas.onpointermove=e=>{if(!drag)return;yaw+=(e.clientX-drag[0])*.006;pitch=Math.max(-1.57,Math.min(1.57,pitch+(e.clientY-drag[1])*.006));drag=[e.clientX,e.clientY];view.set_camera(yaw,pitch);};canvas.onpointerup=()=>drag=null;
+const provenance=await(await fetch('gallery/smile/provenance.json')).json();document.querySelector('#epoch')!.textContent=provenance.utc.replace('T',' · ').replace('Z',' UTC');document.querySelector('#source')!.textContent=`Processed UVI RGB mapped to ${provenance.emission_altitude_km} km using the existing ${provenance.calibration_quality} calibration.`;
+(window as any).smileExample={ready:true,view};

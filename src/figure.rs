@@ -322,6 +322,8 @@ impl Contour {
 }
 #[derive(Clone, Debug)]
 pub enum Layer {
+    /// An RGBA image fitted to the panel, with native vector axes and LaTeX labels.
+    Image(image::RgbaImage),
     Line(Line),
     Pcolormesh(Field),
     QuadMesh(QuadMesh),
@@ -332,6 +334,7 @@ pub enum Layer {
 pub struct Panel {
     pub rect: Rect,
     pub axes: Option<Axes>,
+    pub axes_visible: bool,
     pub layers: Vec<Layer>,
     pub labels: Vec<Label>,
 }
@@ -378,6 +381,7 @@ impl Panel {
         Self {
             rect,
             axes: Some(axes),
+            axes_visible: true,
             layers: vec![],
             labels: vec![],
         }
@@ -432,7 +436,12 @@ pub struct Figure {
     pub raster_dpi: f64,
     /// Fail on cropped or colliding label boxes; explicitly disable for intentional overlays.
     pub check_label_bounds: bool,
+    /// Crop exported page to visible content plus padding. Disable for fixed page layouts.
+    pub tight_export: bool,
+    pub export_padding_mm: f64,
     pub check_label_overlap: bool,
+    /// Reject labels obscured by colorbars, and axis labels colliding with data panels.
+    pub check_label_geometry: bool,
 }
 // Rasterize shared geometry into one coverage buffer. Independent antialiased
 // SVG paths leave background seams even when their corners coincide exactly.
@@ -524,7 +533,10 @@ impl Figure {
             },
             raster_dpi: 300.0,
             check_label_bounds: true,
+            tight_export: true,
+            export_padding_mm: 2.0,
             check_label_overlap: true,
+            check_label_geometry: true,
         }
     }
     pub fn scale(&mut self, s: Scale) -> usize {
@@ -587,6 +599,10 @@ impl Figure {
             );
             for l in &p.layers {
                 let id = match l {
+                    Layer::Image(img) => {
+                        ensure!(img.width() > 0 && img.height() > 0, "Empty raster image");
+                        continue;
+                    }
                     Layer::Line(f) => {
                         ensure!(
                             f.width_pt.is_finite() && f.width_pt >= 0.0,
@@ -651,7 +667,9 @@ impl Figure {
     fn all_labels(&self) -> Vec<String> {
         let mut v = vec![];
         for p in &self.panels {
-            if let Some(a) = &p.axes {
+            if let Some(a) = &p.axes
+                && p.axes_visible
+            {
                 v.extend([a.xlabel.clone(), a.ylabel.clone()]);
                 v.extend(a.xticks.iter().chain(&a.yticks).map(|x| number(*x)));
             }
@@ -677,6 +695,7 @@ impl Figure {
         );
         let mut serial = 0;
         let mut label_bounds: Vec<(String, [f64; 4])> = vec![];
+        let mut axis_bounds: Vec<(String, [f64; 4])> = vec![];
         for (pi, p) in self.panels.iter().enumerate() {
             let r = p.rect;
             write!(
@@ -709,6 +728,7 @@ impl Figure {
                                 .unwrap_or_default()
                         )?;
                     }
+                    Layer::Image(img) => self.embed_image(&mut s, p.rect, img.clone())?,
                     Layer::Pcolormesh(field) => self.image(&mut s, p, |x, y| {
                         self.scales[field.scale].map(field.sample(x, y))
                     })?,
@@ -761,7 +781,10 @@ impl Figure {
                 }
             }
             s.push_str("</g>");
-            if let Some(a) = &p.axes {
+            if let Some(a) = &p.axes
+                && p.axes_visible
+            {
+                let axis_start = label_bounds.len();
                 let em = self.font_pt * MM_PER_PT;
                 write!(
                     s,
@@ -839,6 +862,7 @@ impl Figure {
                     &mut serial,
                     &mut label_bounds,
                 )?;
+                axis_bounds.extend(label_bounds[axis_start..].iter().cloned());
             }
             for l in &p.labels {
                 place(
@@ -897,7 +921,7 @@ impl Figure {
                 let [a, z] = sc.limits.map(|x| sc.transform(x));
                 let t = (sc.transform(*v) - a) / (z - a);
                 let (x, y) = if b.horizontal {
-                    (r.x + t * r.width, r.y + r.height + 0.9 * em)
+                    (r.x + t * r.width, r.y + r.height + 1.3 * em)
                 } else {
                     (r.x + r.width + 1.4 * em, r.y + (1.0 - t) * r.height)
                 };
@@ -914,7 +938,7 @@ impl Figure {
                 )?;
             }
             let (x, y, rotation) = if b.horizontal {
-                (r.x + r.width / 2.0, r.y + r.height + 2.4 * em, 0.0)
+                (r.x + r.width / 2.0, r.y + r.height + 2.9 * em, 0.0)
             } else {
                 (r.x + r.width + 3.4 * em, r.y + r.height / 2.0, -90.0)
             };
@@ -943,6 +967,35 @@ impl Figure {
                 &mut label_bounds,
             )?;
         }
+        let intersects = |b: [f64; 4], r: Rect| {
+            b[2].min(r.x + r.width) - b[0].max(r.x) > 0.05
+                && b[3].min(r.y + r.height) - b[1].max(r.y) > 0.05
+        };
+        let mut warnings = Vec::new();
+        for (label, bounds) in &label_bounds {
+            for (i, bar) in self.colorbars.iter().enumerate() {
+                if intersects(*bounds, bar.rect) {
+                    warnings.push(format!("Label {label} overlaps colorbar {i}; move the colorbar or increase its margin."));
+                }
+            }
+        }
+        for (label, bounds) in &axis_bounds {
+            for (i, panel) in self.panels.iter().enumerate() {
+                if intersects(*bounds, panel.rect) {
+                    warnings.push(format!(
+                        "Axis label {label} overlaps data panel {i}; increase the panel spacing."
+                    ));
+                }
+            }
+        }
+        for warning in &warnings {
+            eprintln!("rustplotlib layout warning: {warning}");
+        }
+        ensure!(
+            !self.check_label_geometry || warnings.is_empty(),
+            "Unsafe layout: {} Explicitly set check_label_geometry=false only to force intentional overlaps.",
+            warnings.join(" ")
+        );
         if self.check_label_bounds {
             for (label, b) in &label_bounds {
                 ensure!(
@@ -1004,9 +1057,60 @@ impl Figure {
         Ok(())
     }
     #[cfg(feature = "export")]
+    fn tight_svg(&self, svg: &str) -> Result<String> {
+        ensure!(
+            self.export_padding_mm.is_finite() && self.export_padding_mm >= 0.,
+            "Invalid export padding"
+        );
+        let tree = resvg::usvg::Tree::from_str(svg, &resvg::usvg::Options::default())?;
+        // Measure ink, including raster alpha and vector glyphs, at 150 dpi.
+        let scale = 150. / 96.;
+        let w = (tree.size().width() as f64 * scale).ceil() as u32;
+        let h = (tree.size().height() as f64 * scale).ceil() as u32;
+        let mut pix = resvg::tiny_skia::Pixmap::new(w, h).context("Invalid crop dimensions")?;
+        pix.fill(resvg::tiny_skia::Color::WHITE);
+        resvg::render(
+            &tree,
+            resvg::tiny_skia::Transform::from_scale(scale as f32, scale as f32),
+            &mut pix.as_mut(),
+        );
+        let mut bounds = [w, h, 0, 0];
+        let mut found = false;
+        for (i, p) in pix.data().chunks_exact(4).enumerate() {
+            if p[..3].iter().any(|&v| v < 250) {
+                let x = i as u32 % w;
+                let y = i as u32 / w;
+                bounds[0] = bounds[0].min(x);
+                bounds[1] = bounds[1].min(y);
+                bounds[2] = bounds[2].max(x + 1);
+                bounds[3] = bounds[3].max(y + 1);
+                found = true;
+            }
+        }
+        if !found {
+            return Ok(svg.to_string());
+        }
+        let mm = 25.4 / 150.;
+        let pad = self.export_padding_mm;
+        let x = (bounds[0] as f64 * mm - pad).max(0.);
+        let y = (bounds[1] as f64 * mm - pad).max(0.);
+        let width = (bounds[2] as f64 * mm + pad).min(self.width_mm) - x;
+        let height = (bounds[3] as f64 * mm + pad).min(self.height_mm) - y;
+        let end = svg.find('>').context("Missing SVG root")?;
+        Ok(format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"{width}mm\" height=\"{height}mm\" viewBox=\"{x} {y} {width} {height}\">{}",
+            &svg[end + 1..]
+        ))
+    }
+    #[cfg(feature = "export")]
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
-        let svg = self.svg()?;
+        let raw_svg = self.svg()?;
+        let svg = if self.tight_export {
+            self.tight_svg(&raw_svg)?
+        } else {
+            raw_svg
+        };
         match path
             .extension()
             .and_then(|x| x.to_str())
@@ -1033,8 +1137,8 @@ impl Figure {
             }
             "png" | "jpg" | "jpeg" => {
                 let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default())?;
-                let w = (self.width_mm * self.raster_dpi / 25.4).round() as u32;
-                let h = (self.height_mm * self.raster_dpi / 25.4).round() as u32;
+                let w = (tree.size().width() as f64 * self.raster_dpi / 96.0).round() as u32;
+                let h = (tree.size().height() as f64 * self.raster_dpi / 96.0).round() as u32;
                 let mut pix =
                     resvg::tiny_skia::Pixmap::new(w, h).context("Invalid export dimensions")?;
                 pix.fill(resvg::tiny_skia::Color::WHITE);

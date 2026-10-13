@@ -2,7 +2,7 @@ use anyhow::Result;
 use rustplotlib::*;
 fn main() -> Result<()> {
     let mut f = Figure::new(IntendedUse::ArticleWide);
-    f.height_mm = 80.0;
+    f.height_mm = 100.0;
     let nodes: Vec<_> = (0..=160).map(|i| -3.0 + 6.0 * i as f64 / 160.0).collect();
     for (k, (title, formula, zlim)) in [
         ("Gaussian peak", r"$z=\exp[-(x^2+y^2)/2]$", [0.0, 1.0]),
@@ -61,9 +61,9 @@ fn main() -> Result<()> {
         f.labels
             .push(Label::new(title, rect.x + rect.width / 2.0, 4.0));
         f.labels
-            .push(Label::new(formula, rect.x + rect.width / 2.0, 67.0));
+            .push(Label::new(formula, rect.x + rect.width / 2.0, 83.0));
         let mut bar = Colorbar::new(
-            Rect::new(rect.x + 6.0, 73.0, 43.0, 1.5),
+            Rect::new(rect.x + 6.0, 90.0, 43.0, 1.5),
             sc,
             "",
             vec![zlim[0], zlim[1]],

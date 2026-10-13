@@ -5,6 +5,7 @@ fn real_latex_cache_and_all_export_formats() {
     let root = PathBuf::from("target/export-test");
     std::fs::create_dir_all(&root).unwrap();
     let mut f = Figure::new(IntendedUse::ArticleColumn);
+    f.tight_export = false;
     f.latex.cache = root.join("latex");
     let ids = f.grid(1, 1).unwrap();
     f.panels[ids[0]].axes = Some(Axes::new(
@@ -66,6 +67,7 @@ fn real_latex_cache_and_all_export_formats() {
 #[test]
 fn cropped_and_overlapping_labels_are_rejected_by_default() {
     let mut f = Figure::new(IntendedUse::ArticleColumn);
+    f.tight_export = false;
     f.latex.cache = PathBuf::from("target/layout-test-latex");
     f.labels.push(Label::new(r"$\omega$", 0.0, 0.0));
     assert!(f.svg().unwrap_err().to_string().contains("cropped"));
@@ -90,6 +92,7 @@ fn pdf_colorbar_matches_raster_colorbar() {
     let root = PathBuf::from("target/colorbar-test");
     std::fs::create_dir_all(&root).unwrap();
     let mut f = Figure::new(IntendedUse::ArticleColumn);
+    f.tight_export = false;
     let scale =
         f.scale(Scale::new([-1.0, 1.0], Normalization::Linear, ColorMap::diverging()).unwrap());
     let mut bar = Colorbar::new(Rect::new(10.0, 10.0, 60.0, 3.0), scale, "", vec![]);
@@ -121,4 +124,86 @@ fn pdf_colorbar_matches_raster_colorbar() {
             );
         }
     }
+}
+
+#[test]
+fn axis_labels_and_colorbars_cannot_overlap_unless_forced() {
+    let root = PathBuf::from("target/geometry-layout-test");
+    std::fs::create_dir_all(&root).unwrap();
+    let mut f = Figure::new(IntendedUse::ArticleColumn);
+    f.tight_export = false;
+    f.height_mm = 110.;
+    let sc = f.scale(Scale::new([0., 1.], Normalization::Linear, ColorMap::estuary()).unwrap());
+    f.panels.push(Panel::new(
+        Rect::new(15., 12., 60., 60.),
+        Axes::new([0., 6.], [0., 6.], "$x$", "$y$"),
+    ));
+    let mut bar = Colorbar::new(Rect::new(15., 79., 60., 1.5), sc, "", vec![]);
+    bar.horizontal = true;
+    f.colorbars.push(bar);
+    let err = f.save(root.join("bad.png")).unwrap_err().to_string();
+    assert!(err.contains("$x$") && err.contains("overlaps colorbar"));
+    assert!(
+        !root.join("bad.png").exists(),
+        "An invalid layout must not write an export"
+    );
+    f.check_label_geometry = false;
+    assert!(
+        f.svg().is_ok(),
+        "Explicit override must allow intentional overlap"
+    );
+    f.check_label_geometry = true;
+    f.colorbars[0].rect.y = 89.;
+    assert!(f.svg().is_ok());
+    f.panels.push(Panel::new(
+        Rect::new(35., 78., 20., 8.),
+        Axes::new([0., 1.], [0., 1.], "", ""),
+    ));
+    let err = f.svg().unwrap_err().to_string();
+    assert!(err.contains("Axis label") && err.contains("overlaps data panel"));
+}
+
+#[test]
+fn tight_export_is_default_and_preserves_colorbar_labels() {
+    let root = PathBuf::from("target/tight-test");
+    std::fs::create_dir_all(&root).unwrap();
+    let mut f = Figure::new(IntendedUse::ArticleColumn);
+    assert!(f.tight_export);
+    let sc = f.scale(Scale::new([0., 1.], Normalization::Linear, ColorMap::ember()).unwrap());
+    let mut bar = Colorbar::new(Rect::new(25., 20., 35., 2.), sc, "Density", vec![0., 1.]);
+    bar.horizontal = true;
+    f.colorbars.push(bar);
+    f.save(root.join("tight.png")).unwrap();
+    f.save(root.join("tight.svg")).unwrap();
+    let tight = image::open(root.join("tight.png")).unwrap();
+    f.tight_export = false;
+    f.save(root.join("full.png")).unwrap();
+    let full = image::open(root.join("full.png")).unwrap();
+    assert!(tight.width() < full.width());
+    assert!(tight.height() < full.height() / 2);
+    let s = std::fs::read_to_string(root.join("tight.svg")).unwrap();
+    assert!(s.contains("viewBox="));
+    assert!(s.contains("<path"));
+}
+
+#[test]
+fn raster_layer_keeps_native_typesetting_and_rejects_empty_images() {
+    let mut f = Figure::new(IntendedUse::ArticleColumn);
+    let mut p = Panel::new(
+        Rect::new(10., 10., 60., 30.),
+        Axes::new([0., 1.], [0., 1.], "", ""),
+    );
+    p.axes_visible = false;
+    p.push(Layer::Image(image::RgbaImage::from_pixel(
+        2,
+        2,
+        image::Rgba([120, 40, 20, 255]),
+    )));
+    f.panels.push(p);
+    f.labels.push(Label::new(r"$n_e$", 40., 5.));
+    let svg = f.svg().unwrap();
+    assert!(svg.contains("data:image/png;base64,"));
+    assert!(svg.contains("<path"));
+    f.panels[0].layers[0] = Layer::Image(image::RgbaImage::new(0, 0));
+    assert!(f.svg().unwrap_err().to_string().contains("Empty raster"));
 }

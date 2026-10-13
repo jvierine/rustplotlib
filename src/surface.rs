@@ -11,6 +11,8 @@ pub struct Surface {
     pub yaw: f64,
     pub elevation: f64,
     pub shading: bool,
+    /// Fill the panel using the projected finite geometry rather than an empty unit cube.
+    pub fit_to_view: bool,
 }
 impl Surface {
     pub fn new(
@@ -43,10 +45,11 @@ impl Surface {
             yaw: -0.65,
             elevation: 0.55,
             shading: true,
+            fit_to_view: true,
         })
     }
     /// Normalized screen x/y and camera depth. Useful for placing 3-D axes.
-    pub fn project(&self, p: [f64; 3]) -> [f64; 3] {
+    fn raw_project(&self, p: [f64; 3]) -> [f64; 3] {
         let x = 2.0 * (p[0] - self.x[0]) / (self.x[self.x.len() - 1] - self.x[0]) - 1.0;
         let y = 2.0 * (p[1] - self.y[0]) / (self.y[self.y.len() - 1] - self.y[0]) - 1.0;
         let z = 2.0 * (p[2] - self.zlim[0]) / (self.zlim[1] - self.zlim[0]) - 1.0;
@@ -58,15 +61,54 @@ impl Surface {
             self.elevation.cos() * forward + self.elevation.sin() * z,
         ]
     }
+    fn projected_bounds(&self) -> [f64; 4] {
+        let mut b = [
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        ];
+        for (j, &y) in self.y.iter().enumerate() {
+            for (i, &x) in self.x.iter().enumerate() {
+                let z = self.z[j * self.x.len() + i];
+                if !z.is_finite() {
+                    continue;
+                }
+                let p = self.raw_project([x, y, z]);
+                b[0] = b[0].min(p[0]);
+                b[1] = b[1].min(p[1]);
+                b[2] = b[2].max(p[0]);
+                b[3] = b[3].max(p[1]);
+            }
+        }
+        b
+    }
+    fn fitted(&self, p: [f64; 3], b: [f64; 4]) -> [f64; 3] {
+        if !self.fit_to_view || !b.iter().all(|x| x.is_finite()) {
+            return p;
+        }
+        [
+            0.02 + 0.96 * (p[0] - b[0]) / (b[2] - b[0]).max(1e-12),
+            0.02 + 0.96 * (p[1] - b[1]) / (b[3] - b[1]).max(1e-12),
+            p[2],
+        ]
+    }
+    pub fn project(&self, p: [f64; 3]) -> [f64; 3] {
+        self.fitted(self.raw_project(p), self.projected_bounds())
+    }
     pub(crate) fn raster(&self, w: u32, h: u32, scale: &Scale) -> image::RgbaImage {
         let nx = self.x.len();
         let ny = self.y.len();
         let mut img = image::RgbaImage::new(w, h);
         let mut depth = vec![f64::NEG_INFINITY; (w * h) as usize];
+        let bounds = self.projected_bounds();
         let points: Vec<_> = (0..ny)
             .flat_map(|j| {
                 (0..nx).map(move |i| {
-                    let p = self.project([self.x[i], self.y[j], self.z[j * nx + i]]);
+                    let p = self.fitted(
+                        self.raw_project([self.x[i], self.y[j], self.z[j * nx + i]]),
+                        bounds,
+                    );
                     [p[0] * w as f64, p[1] * h as f64, p[2]]
                 })
             })

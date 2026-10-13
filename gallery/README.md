@@ -103,14 +103,44 @@ Periodic viscous Navier--Stokes with passive dye. [Source](../examples/khi.rs)
 
 Measured VTEC; shared HEIMDALL WebGL2 renderer, globe and flat-map views. [Source](../web/src/heimdall.ts)
 
+## GAMERA current paths
+
+![GAMERA current paths](currents.png)
+
+Traced current-density paths with a scientific PNG/PDF export. [Source](../examples/scientific_views.rs)
+
+## SMILE aurora on Earth
+
+![SMILE aurora on Earth](smile.png)
+
+Projected UVI above a textured Earth; rotate the interactive globe. [Source](../examples/scientific_views.rs)
+
+## Curved atmospheric sections
+
+![Curved atmospheric sections](tiegcm.png)
+
+Completed TIE-GCM heating-pulse experiment, compared with its control at common geometric heights. [Source](../examples/tiegcm.rs)
+
+## Mixing atlas
+
+![Mixing atlas](tufte_mixing.png)
+
+KHI snapshots, aligned profiles, small multiples and inline diagnostics. [Source](../examples/visual_essays.rs)
+
+## Meteor wake anatomy
+
+![Meteor wake anatomy](tufte_meteor.png)
+
+Density, marginal profile and cumulative footprint of the Dimant–Oppenheim function. [Source](../examples/visual_essays.rs)
+
+## One wave, twelve clocks
+
+![One wave, twelve clocks](tufte_wave.png)
+
+Stacked analytic receiver traces with a shared arrival guide. [Source](../examples/visual_essays.rs)
+
 ## Spherical cutaways
 
 ![Spherical cutaways](atmosphere.png)
 
 Interactive temperature, density and wind demonstration fields. [Source](../examples/atmosphere.rs)
-
-## Volume renderer
-
-![Volume](volume.gif)
-
-[Source](../examples/web_data.rs)

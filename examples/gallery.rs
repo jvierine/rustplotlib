@@ -378,6 +378,48 @@ fn index() -> Result<()> {
             "web/src/heimdall.ts",
         ),
         (
+            "currents",
+            "GAMERA current paths",
+            "Traced current-density paths with a scientific PNG/PDF export.",
+            "../currents.html",
+            "examples/scientific_views.rs",
+        ),
+        (
+            "smile",
+            "SMILE aurora on Earth",
+            "Projected UVI above a textured Earth; rotate the interactive globe.",
+            "../smile.html",
+            "examples/scientific_views.rs",
+        ),
+        (
+            "tiegcm",
+            "Curved atmospheric sections",
+            "Completed TIE-GCM heating-pulse experiment, compared with its control at common geometric heights.",
+            "tiegcm.pdf",
+            "examples/tiegcm.rs",
+        ),
+        (
+            "tufte_mixing",
+            "Mixing atlas",
+            "KHI snapshots, aligned profiles, small multiples and inline diagnostics.",
+            "tufte_mixing.pdf",
+            "examples/visual_essays.rs",
+        ),
+        (
+            "tufte_meteor",
+            "Meteor wake anatomy",
+            "Density, marginal profile and cumulative footprint of the Dimant–Oppenheim function.",
+            "tufte_meteor.pdf",
+            "examples/visual_essays.rs",
+        ),
+        (
+            "tufte_wave",
+            "One wave, twelve clocks",
+            "Stacked analytic receiver traces with a shared arrival guide.",
+            "tufte_wave.pdf",
+            "examples/visual_essays.rs",
+        ),
+        (
             "atmosphere",
             "Spherical cutaways",
             "Interactive temperature, density and wind demonstration fields.",
@@ -390,17 +432,19 @@ fn index() -> Result<()> {
         } else {
             format!("{name}.png")
         };
-        html.push_str(&format!(r#"<article><h2>{title}</h2><a href="{url}"><img src="{image}" alt="{title}"></a><p>{description}</p><div class="links"><a href="{url}">Open example</a><a href="https://github.com/jvierine/rustplotlib/blob/main/{source}">Source</a></div></article>"#));
+        let download = if ["heimdall", "atmosphere", "smile", "currents"].contains(&name) {
+            format!(r#"<a href="{name}.pdf">Scientific PDF</a>"#)
+        } else {
+            String::new()
+        };
+        html.push_str(&format!(r#"<article><h2>{title}</h2><a href="{url}"><img src="{image}" alt="{title}"></a><p>{description}</p><div class="links"><a href="{url}">Open example</a>{download}<a href="https://github.com/jvierine/rustplotlib/blob/main/{source}">Source</a></div></article>"#));
         md.push_str(&format!(
             "## {title}\n\n![{title}]({image})\n\n{description} [Source](../{source})\n\n"
         ));
     }
-    html.push_str(r#"<article><h2>Volume renderer</h2><img src="volume.gif" alt="Analytic vortex-ring scalar volumes"><p>Rust/WASM and WebGL2 ray marching. Analytic ring fields.</p><div class="links"><a href="../">Interactive viewer</a><a href="https://github.com/jvierine/rustplotlib/blob/main/examples/web_data.rs">Rust data generator</a></div></article></main></html>"#);
-    md.push_str(
-        "## Volume renderer\n\n![Volume](volume.gif)\n\n[Source](../examples/web_data.rs)\n",
-    );
+    html.push_str("</main></html>");
     fs::write("gallery/index.html", html)?;
-    fs::write("gallery/README.md", md)?;
+    fs::write("gallery/README.md", md.trim_end().to_owned() + "\n")?;
     Ok(())
 }
 

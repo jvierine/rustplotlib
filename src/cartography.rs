@@ -138,3 +138,54 @@ mod tests {
         assert!(l.points.iter().any(|q| q[0].is_nan()));
     }
 }
+
+/// A vertical section following a spherical Earth, with distance measured along
+/// the reference surface. Returns shared-corner quadrilaterals in kilometres.
+/// The radial geometry is physical; no vertical exaggeration is applied.
+pub fn curved_section(
+    radius_km: f64,
+    distance_edges: &[f64],
+    altitude_edges: &[f64],
+    values: Vec<f64>,
+    scale: usize,
+) -> anyhow::Result<crate::QuadMesh> {
+    anyhow::ensure!(
+        radius_km.is_finite() && radius_km > 0.,
+        "Invalid reference radius"
+    );
+    anyhow::ensure!(
+        distance_edges.len() > 1
+            && altitude_edges.len() > 1
+            && distance_edges.windows(2).all(|p| p[1] > p[0])
+            && altitude_edges.windows(2).all(|p| p[1] > p[0]),
+        "Section coordinates must increase"
+    );
+    anyhow::ensure!(
+        distance_edges
+            .iter()
+            .chain(altitude_edges)
+            .all(|x| x.is_finite())
+            && altitude_edges[0] + radius_km > 0.,
+        "Invalid section coordinates"
+    );
+    let centre = (distance_edges[0] + distance_edges[distance_edges.len() - 1]) * 0.5;
+    let corners = altitude_edges
+        .iter()
+        .flat_map(|h| {
+            distance_edges.iter().map(move |d| {
+                let a = (d - centre) / radius_km;
+                [
+                    (radius_km + h) * a.sin(),
+                    (radius_km + h) * a.cos() - radius_km,
+                ]
+            })
+        })
+        .collect();
+    crate::QuadMesh::new(
+        distance_edges.len() - 1,
+        altitude_edges.len() - 1,
+        corners,
+        values,
+        scale,
+    )
+}

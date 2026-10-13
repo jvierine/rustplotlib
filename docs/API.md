@@ -95,3 +95,16 @@ TIE-GCM secondary histories can be converted with
 It uses ZG for interface fields and ZGMID (or ZG interpolated in log pressure)
 for midpoint fields, with explicit unit conversion and no height extrapolation.
 [NCAR grid conventions](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/grid.html).
+
+`Layer::Image(RgbaImage)` fits a raster data view into a panel while keeping axes,
+labels and legends in native LaTeX/vector output. Scientific gallery exports use
+this for WebGL scenes; page controls are excluded.
+
+`cartography::curved_section` maps shared distance/altitude cell edges onto a
+spherical meridian. Coordinates and radius are in kilometres, with no vertical
+exaggeration. See `examples/tiegcm.rs` for paired model data at common geometric
+heights.
+
+Label/colorbar and axis/panel collisions produce a warning and fail export by
+default. `Figure::check_label_geometry=false` permits intentional overlaps;
+label bounds and label-to-label checks remain independent.

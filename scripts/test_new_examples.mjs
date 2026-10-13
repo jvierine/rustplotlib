@@ -1,0 +1,11 @@
+import {chromium} from 'playwright';import {mkdir,writeFile} from 'node:fs/promises';import {existsSync} from 'node:fs';
+const browser=await chromium.launch({executablePath:process.platform==='darwin'?'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome':chromium.executablePath(),args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+await mkdir('validation',{recursive:true});const page=await browser.newPage({viewport:{width:1200,height:950}});const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+try{
+for(const [name,ready,canvas] of [['currents','currentsExample','#currents'],['smile','smileExample','#smile']]){
+await page.goto(`http://127.0.0.1:8791/${name}.html`);await page.waitForFunction(key=>window[key]?.ready,ready,{timeout:90000});await page.screenshot({path:`validation/${name}-page.png`,fullPage:true});const raw=await page.evaluate(({name,canvas})=>{const c=document.querySelector(canvas);c.width*=2;c.height*=2;window[name+'Example'].view.draw();return c.toDataURL('image/png');},{name,canvas});await writeFile(`output/${name}-canvas.png`,Buffer.from(raw.split(',')[1],'base64'));const before=await page.locator(canvas).screenshot();const r=await page.locator(canvas).boundingBox();await page.mouse.move(r.x+r.width*.5,r.y+r.height*.5);await page.mouse.down();await page.mouse.move(r.x+r.width*.65,r.y+r.height*.60,{steps:5});await page.mouse.up();const after=await page.locator(canvas).screenshot();if(before.equals(after))throw Error(`${name} globe cannot rotate`);
+if(name==='currents'){await page.locator('#time').fill('2');await page.locator('#time').dispatchEvent('input');if((await page.locator(canvas).screenshot()).equals(after))throw Error('Current snapshots unchanged');}
+await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error(`${name} mobile overflow`);await page.setViewportSize({width:1200,height:950});
+}
+if(errors.length)throw Error(errors.join('\n'));await writeFile('validation/new-examples.json',JSON.stringify({passed:true,errors,rotation:true,currentSnapshots:true},null,2));console.log('GAMERA paths and calibrated SMILE globe passed rotation and mobile checks');
+}finally{await browser.close();}

@@ -55,7 +55,7 @@ fn main() -> Result<()> {
         )?;
         let mut f = Figure::new(IntendedUse::Mobile);
         f.width_mm = 100.0;
-        f.height_mm = 20.0;
+        f.height_mm = 23.0;
         let scale = f.scale(Scale::new(
             [lo, hi],
             Normalization::Linear,

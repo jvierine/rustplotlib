@@ -17,3 +17,6 @@ npx esbuild web/src/heimdall.ts --bundle --format=esm --outfile=web/dist/heimdal
 npx esbuild web/src/atmosphere.ts --bundle --format=esm --outfile=web/dist/atmosphere.js
 
 cargo run --release --example heimdall_labels
+
+npx esbuild web/src/currents.ts --bundle --format=esm --outfile=web/dist/currents.js
+npx esbuild web/src/smile.ts --bundle --format=esm --outfile=web/dist/smile.js
