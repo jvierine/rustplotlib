@@ -68,6 +68,28 @@ fn main() -> Result<()> {
             l.width_pt = if alt == 0. { 0.65 } else { 0.3 };
             p.push(Layer::Line(l));
         }
+        if k == 0 {
+            let latitude = 80.;
+            let distance = (69.65 - latitude) * std::f64::consts::PI / 180. * 6371.;
+            let angle = (distance - mid) / 6371.;
+            for (altitude, label_y) in [(300., y + 15.), (100., y + 23.)] {
+                let q = [
+                    (6371. + altitude) * angle.sin(),
+                    (6371. + altitude) * angle.cos() - 6371.,
+                ];
+                let elbow = [
+                    (23. - 15.) / 150. * 8000. - 4000.,
+                    550. - (label_y - y) / 32.8125 * 1750.,
+                ];
+                let end = [(18. - 15.) / 150. * 8000. - 4000., elbow[1]];
+                let mut leader = Line::new(vec![q, elbow, end], "#61727c");
+                leader.width_pt = 0.5;
+                p.push(Layer::Line(leader));
+                let mut label = Label::new(format!("{altitude:.0} km"), 9., label_y);
+                label.color = "#465660".into();
+                f.labels.push(label);
+            }
+        }
         for latitude in [80., 70., 60., 50., 40., 30.] {
             let distance = (69.65 - latitude) * std::f64::consts::PI / 180. * 6371.;
             if distance < d[0] || distance > d[d.len() - 1] {
