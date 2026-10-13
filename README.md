@@ -32,20 +32,41 @@ figure.save("figure.pdf")?;
 
 ## Scientific examples
 
-| KHI electron-density evolution | Upward ion drift and background shear |
+Native scientific exports, interactive WebGL pages, and simulation animations.
+Click a figure to open its PDF, animation, or interactive view.
+
+| Curvilinear mesh | Acoustic–gravity dispersion |
 |:--:|:--:|
-| [![KHI density](gallery/syisr_khi_density.gif)](gallery/syisr_khi_density.mp4) | [![Ion drift and shear](gallery/syisr_khi_ion_up.gif)](gallery/syisr_khi_ion_up.mp4) |
-| [MP4](gallery/syisr_khi_density.mp4) · [PDF](gallery/syisr_khi_density.pdf) | [MP4](gallery/syisr_khi_ion_up.mp4) · [PDF](gallery/syisr_khi_ion_up.pdf) |
+| [![Curvilinear mesh](gallery/curvilinear.png)](gallery/curvilinear.pdf) | [![Acoustic–gravity dispersion](gallery/dispersion.png)](gallery/dispersion.pdf) |
+| [PDF](gallery/curvilinear.pdf) · [Rust/source](examples/gallery.rs) | [PDF](gallery/dispersion.pdf) · [Rust/source](examples/gallery.rs) |
 
-Two-hour simulated KHI evolution at Ri = 0.08, viewed in the mean-flow frame.
-These are model demonstrations, not observational fits. [Rust renderer](examples/syisr_khi.rs).
-
-| Measured HEIMDALL TEC | Dimant–Oppenheim meteor density |
+| KHI evolution and diagnostics | Dimant–Oppenheim density surface |
 |:--:|:--:|
-| [![HEIMDALL globe](gallery/heimdall.png)](https://jvierine.github.io/rustplotlib/heimdall.html) | [![Dimant–Oppenheim surface](gallery/dimant_surface.png)](gallery/dimant_surface.pdf) |
-| [Scientific PDF](gallery/heimdall.pdf) · [WebGL renderer](web/src/heimdall.ts) | [Scientific PDF](gallery/dimant_surface.pdf) · [Rust source](examples/dimant_oppenheim.rs) |
+| [![KHI evolution and diagnostics](gallery/khi_summary.png)](gallery/khi_summary.pdf) | [![Dimant–Oppenheim density surface](gallery/dimant_surface.png)](gallery/dimant_surface.pdf) |
+| [PDF](gallery/khi_summary.pdf) · [Rust/source](examples/khi_summary.rs) | [PDF](gallery/dimant_surface.pdf) · [Rust/source](examples/dimant_oppenheim.rs) |
 
-[All examples](gallery/README.md), including curves, fields, atmospheric sections and scientific exports.
+| Kelvin–Helmholtz instability | Measured HEIMDALL TEC |
+|:--:|:--:|
+| [![Kelvin–Helmholtz instability](gallery/khi.png)](gallery/khi.gif) | [![Measured HEIMDALL TEC](gallery/heimdall.png)](https://jvierine.github.io/rustplotlib/heimdall.html) |
+| [PDF](gallery/khi.pdf) · [Rust/source](examples/khi.rs) | [PDF](gallery/heimdall.pdf) · [Rust/source](web/src/heimdall.ts) |
+
+| GAMERA current paths | SMILE UVI on Earth |
+|:--:|:--:|
+| [![GAMERA current paths](gallery/currents.png)](https://jvierine.github.io/rustplotlib/currents.html) | [![SMILE UVI on Earth](gallery/smile.png)](https://jvierine.github.io/rustplotlib/smile.html) |
+| [PDF](gallery/currents.pdf) · [Rust/source](examples/scientific_views.rs) | [PDF](gallery/smile.pdf) · [Rust/source](examples/scientific_views.rs) |
+
+| TIE-GCM heating pulse | Damped oscillations at article-column size |
+|:--:|:--:|
+| [![TIE-GCM heating pulse](gallery/tiegcm.png)](gallery/tiegcm.pdf) | [![Damped oscillations at article-column size](gallery/single_column.png)](gallery/single_column.pdf) |
+| [PDF](gallery/tiegcm.pdf) · [Rust/source](examples/tiegcm.rs) | [PDF](gallery/single_column.pdf) · [Rust/source](examples/publication.rs) |
+
+| KHI electron-density animation | Ion drift and background wind |
+|:--:|:--:|
+| [![KHI electron-density animation](gallery/syisr_khi_density.gif)](gallery/syisr_khi_density.mp4) | [![Ion drift and background wind](gallery/syisr_khi_ion_up.gif)](gallery/syisr_khi_ion_up.mp4) |
+| [PDF](gallery/syisr_khi_density.pdf) · [Rust/source](examples/syisr_khi.rs) | [PDF](gallery/syisr_khi_ion_up.pdf) · [Rust/source](examples/syisr_khi.rs) |
+
+The KHI cases are simulated demonstrations, not observational fits.
+[Browse all examples](gallery/README.md).
 
 `ArticleColumn`, `ArticleWide`, `Mobile`, `DesktopHalf`, or custom dimensions.
 Defaults use 10–13 pt type, consistent margins and golden-ratio panel geometry.
