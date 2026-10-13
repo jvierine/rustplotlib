@@ -455,7 +455,9 @@ fn index() -> Result<()> {
         ),
     ] {
         let snapshot = if name == "syisr_khi_ion_up" {
-            format!(r#"<a href="{name}.pdf"><img src="{name}.png" alt="Upward ion drift at 60 minutes and aligned background wind"></a>"#)
+            format!(
+                r#"<a href="{name}.pdf"><img src="{name}.png" alt="Upward ion drift at 60 minutes and aligned background wind"></a>"#
+            )
         } else {
             String::new()
         };
