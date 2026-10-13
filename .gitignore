@@ -1,0 +1,10 @@
+/target/
+/.latex-cache/
+/web/pkg/
+/web/dist/
+/web/data/
+/web/gallery/
+/node_modules/
+/output/
+/validation/
+.DS_Store

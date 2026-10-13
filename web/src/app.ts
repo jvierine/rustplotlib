@@ -1,0 +1,33 @@
+import init, { FieldView, VolumeView } from '../pkg/rustplotlib_web.js';
+const el=<T extends HTMLElement>(id:string)=>document.getElementById(id) as T;
+async function main(){
+ await init();
+ const manifest=await(await fetch('data/manifest.json')).json();
+ const [fieldBuffer,volumeBuffer]=await Promise.all([fetch(manifest.field.path).then(r=>r.arrayBuffer()),fetch(manifest.volume.path).then(r=>r.arrayBuffer())]);
+ const fields=new Float32Array(fieldBuffer),volumes=new Float32Array(volumeBuffer);
+ const fieldCanvas=el<HTMLCanvasElement>('field'),volumeCanvas=el<HTMLCanvasElement>('volume');
+ const field=new FieldView(fieldCanvas),volume=new VolumeView(volumeCanvas);
+ const [nx,ny]=manifest.field.shape as number[];const [vx,vy,vz]=manifest.volume.shape as number[];
+ const fieldSlider=el<HTMLInputElement>('field-time'),volumeSlider=el<HTMLInputElement>('volume-time');
+ let yaw=.45,pitch=.25;
+ const fieldFrame=()=>{const k=Number(fieldSlider.value);field.set_data(nx,ny,fields.subarray(k*nx*ny,(k+1)*nx*ny));};
+ const volumeFrame=()=>{const k=Number(volumeSlider.value);volume.set_data(vx,vy,vz,volumes.subarray(k*vx*vy*vz,(k+1)*vx*vy*vz));};
+ field.set_scale(-1,1,0,.08,0);volume.set_transfer(0,1,2,.04);fieldFrame();volumeFrame();
+ fieldSlider.addEventListener('input',fieldFrame);volumeSlider.addEventListener('input',volumeFrame);
+ el<HTMLSelectElement>('normalization').addEventListener('change',e=>field.set_scale(-1,1,Number((e.target as HTMLSelectElement).value),.08,0));
+ el<HTMLInputElement>('opacity').addEventListener('input',e=>volume.set_transfer(0,1,Number((e.target as HTMLInputElement).value),.04));
+ let drag: {x:number,y:number}|null=null;
+ volumeCanvas.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY};volumeCanvas.setPointerCapture(e.pointerId);});
+ volumeCanvas.addEventListener('pointermove',e=>{if(!drag)return;yaw+=(e.clientX-drag.x)*.009;pitch=Math.max(-1.45,Math.min(1.45,pitch+(e.clientY-drag.y)*.009));drag={x:e.clientX,y:e.clientY};volume.set_camera(yaw,pitch);});
+ const end=()=>{drag=null;};volumeCanvas.addEventListener('pointerup',end);volumeCanvas.addEventListener('pointercancel',end);
+ el('reset-camera').addEventListener('click',()=>{yaw=.45;pitch=.25;volume.set_camera(yaw,pitch);});
+ fieldCanvas.addEventListener('pointermove',e=>{const rect=fieldCanvas.getBoundingClientRect();const u=(e.clientX-rect.left)/rect.width,v=1-(e.clientY-rect.top)/rect.height;const i=Math.max(0,Math.min(nx-1,Math.floor(u*nx))),j=Math.max(0,Math.min(ny-1,Math.floor(v*ny)));const q=fields[Number(fieldSlider.value)*nx*ny+j*nx+i];el('probe').textContent=`x = ${(u*8-4).toFixed(2)} km, z = ${(v*6).toFixed(2)} km, p′/p₀ = ${q.toFixed(3)} %`;});
+ let playingField=false,playingVolume=false,last=0;
+ el('play-field').addEventListener('click',()=>{playingField=!playingField;el('play-field').textContent=playingField?'Pause':'Play';});
+ el('play-volume').addEventListener('click',()=>{playingVolume=!playingVolume;el('play-volume').textContent=playingVolume?'Pause':'Play';});
+ const tick=(now:number)=>{if(now-last>100){if(playingField){fieldSlider.value=String((Number(fieldSlider.value)+1)%manifest.field.frames);fieldFrame();}if(playingVolume){volumeSlider.value=String((Number(volumeSlider.value)+1)%manifest.volume.frames);volumeFrame();}last=now;}requestAnimationFrame(tick);};requestAnimationFrame(tick);
+ el('save-volume').addEventListener('click',()=>{volume.draw();const a=document.createElement('a');a.download='volume.png';a.href=volumeCanvas.toDataURL('image/png');a.click();});
+ el('status').textContent=`${field.renderer()} · LaTeX label paths`;
+ Object.assign(window,{rustplotlib:{field,volume,fieldFrame,volumeFrame,manifest,ready:true}});
+}
+main().catch(e=>{el('status').textContent=String(e);console.error(e);});

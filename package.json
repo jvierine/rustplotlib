@@ -1,0 +1,11 @@
+{
+  "name": "rustplotlib-demos",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bash scripts/build_web.sh",
+    "serve": "node scripts/serve.mjs",
+    "test:web": "node scripts/test_web.mjs"
+  },
+  "devDependencies": { "esbuild": "^0.25.0", "typescript": "^5.9.0", "playwright": "^1.55.0" }
+}
