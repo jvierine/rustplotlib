@@ -155,4 +155,4 @@ Two-hour Ri=0.08 model, following the mean zonal drift; no field clipping. [MP4]
 
 ![Ion drift and background shear](syisr_khi_ion_up.png)
 
-Upward magnetic ion drift with an aligned background-wind profile. Simulated, not an observed fit. [MP4](syisr_khi_ion_up.mp4) · [PDF](syisr_khi_ion_up.pdf) · [Rust source](../examples/syisr_khi.rs)
+The 60-minute Ri=0.08 snapshot: upward magnetic ion drift with an equal-height background-wind profile, LaTeX labels and a signed color scale. Simulated, not an observed fit. [MP4](syisr_khi_ion_up.mp4) · [PDF](syisr_khi_ion_up.pdf) · [Rust source](../examples/syisr_khi.rs)
