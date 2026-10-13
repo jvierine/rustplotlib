@@ -8,3 +8,5 @@
 /output/
 /validation/
 .DS_Store
+
+__pycache__/

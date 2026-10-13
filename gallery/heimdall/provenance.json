@@ -1,0 +1,78 @@
+{
+  "date": "2025-09-25",
+  "generation": "1791023878084755631",
+  "minutes": [
+    720,
+    735,
+    750,
+    765,
+    779,
+    795,
+    810,
+    825,
+    840
+  ],
+  "requestedMinute": 779,
+  "sources": [
+    {
+      "url": "https://pikos.org/heimdall/pair-overlays/flow-grid-2025-09-25/latest.json",
+      "file": "metadata.json",
+      "sha256": "df85e9a7df21e3e444d77384f94d07e89d4624e49a97870253bbf32562624984"
+    },
+    {
+      "url": "https://pikos.org/heimdall/pair-overlays/flow-grid-2025-09-25/1791023878084755631/geometry.bin",
+      "file": "geometry.bin",
+      "sha256": "825dc068e586617c644c2ea81faf3c7000f997200af09a8ae0bf8e33d0d025d4"
+    },
+    {
+      "url": "https://pikos.org/heimdall/pair-overlays/flow-grid-2025-09-25/1791023878084755631/720.bin",
+      "file": "720.bin",
+      "sha256": "483e04b098c649e88e55ef3f5a5edffef78ac0e2d56f6c53bf7089c50b905432"
+    },
+    {
+      "url": "https://pikos.org/heimdall/pair-overlays/flow-grid-2025-09-25/1791023878084755631/735.bin",
+      "file": "735.bin",
+      "sha256": "7656a9078a447659fffa8281dfff900c0b36b61aeca7f421332967e198a00c49"
+    },
+    {
+      "url": "https://pikos.org/heimdall/pair-overlays/flow-grid-2025-09-25/1791023878084755631/750.bin",
+      "file": "750.bin",
+      "sha256": "7c3ff913c67465ef24fc63784bd6c5b42c694133eac89f3f3dda16846008bac1"
+    },
+    {
+      "url": "https://pikos.org/heimdall/pair-overlays/flow-grid-2025-09-25/1791023878084755631/765.bin",
+      "file": "765.bin",
+      "sha256": "18969b1da8384ceca343387070e785b552c6be32ab0e8447d9b70ea6c33e9277"
+    },
+    {
+      "url": "https://pikos.org/heimdall/pair-overlays/flow-grid-2025-09-25/1791023878084755631/779.bin",
+      "file": "779.bin",
+      "sha256": "6ec52d3568fef10e5b4c9c66724b23af6b4386df7fdc4823e8b321b5f8bfe18e"
+    },
+    {
+      "url": "https://pikos.org/heimdall/pair-overlays/flow-grid-2025-09-25/1791023878084755631/795.bin",
+      "file": "795.bin",
+      "sha256": "3f5821079d037e40ef8d2a7f05c0a32c81985bb19cdbfe3c617b88308fe7c6af"
+    },
+    {
+      "url": "https://pikos.org/heimdall/pair-overlays/flow-grid-2025-09-25/1791023878084755631/810.bin",
+      "file": "810.bin",
+      "sha256": "db021871413e5a480a7aed09b0ec20a20795a59014b2643baca4919832e4b89c"
+    },
+    {
+      "url": "https://pikos.org/heimdall/pair-overlays/flow-grid-2025-09-25/1791023878084755631/825.bin",
+      "file": "825.bin",
+      "sha256": "171b5a47349c694514ca06614a99ed28fe81ac43e11e2b3641fcdbc2dd781c19"
+    },
+    {
+      "url": "https://pikos.org/heimdall/pair-overlays/flow-grid-2025-09-25/1791023878084755631/840.bin",
+      "file": "840.bin",
+      "sha256": "5a283ac1821c3654630d0a1a63643e91adcf10cf002d772a964c9d0ede654da7"
+    },
+    {
+      "url": "https://pikos.org/heimdall/api/v1/magnetic/2025.json",
+      "file": "magnetic.json",
+      "sha256": "577460d2cbbf392a8185db7555fbc1882fe303621eb09a7f003359a0a2703802"
+    }
+  ]
+}

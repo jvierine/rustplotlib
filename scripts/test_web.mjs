@@ -28,5 +28,15 @@ try{
  const downloadPromise=page.waitForEvent('download');await page.locator('#save-volume').click();const download=await downloadPromise;await download.saveAs('validation/volume-download.png');
  if(errors.length)throw Error(errors.join('\n'));
  await writeFile('validation/web.json',JSON.stringify({passed:true,errors,nonuniform,fieldBefore,fieldAfter,nonlinear,volumeBefore,volumeAfter,changedVolume,drawSubmissionMs:t,renderer:await page.locator('#status').textContent()},null,2));
+ await page.setViewportSize({width:1280,height:1000});await page.goto('http://127.0.0.1:8791/gallery/index.html');
+ await page.evaluate(()=>document.querySelectorAll('img').forEach(img=>img.loading='eager'));
+ await page.waitForFunction(()=>Array.from(document.querySelectorAll('img')).every(img=>img.complete&&img.naturalWidth>0));
+ const cards=await page.locator('main article').count();if(cards!==16)throw Error('Gallery must contain sixteen examples');
+ const hrefs=await page.locator('a').evaluateAll(links=>links.map(a=>a.href).filter(url=>url.startsWith(location.origin)&&/\.(pdf|png|svg)$/.test(url)));
+ for(const url of hrefs){const response=await page.request.get(url);if(!response.ok())throw Error('Broken gallery download: '+url);}
+ await page.screenshot({path:'validation/gallery-desktop.png',fullPage:true});await page.setViewportSize({width:390,height:844});
+ if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Mobile gallery overflows horizontally');
+ await page.screenshot({path:'validation/gallery-mobile.png',fullPage:true});
+ await writeFile('validation/gallery-web.json',JSON.stringify({passed:true,cards,downloads:hrefs.length,errors},null,2));
  console.log('WebGL2 field, normalization, volume rotation, frame playback, PNG download and mobile layout passed');
 }finally{await browser.close();}

@@ -11,3 +11,9 @@ pub use figure::{
     Axes, Colorbar, Contour, Field, Figure, IntendedUse, Label, Layer, Line, Panel, QuadMesh, Rect,
 };
 pub use latex::Latex;
+
+pub mod cartography;
+pub use cartography::Projection;
+
+pub mod surface;
+pub use surface::Surface;

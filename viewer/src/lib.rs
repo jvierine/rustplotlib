@@ -316,6 +316,7 @@ impl VolumeView {
         let t = texture(&gl, Gl::TEXTURE_3D)?;
         gl.use_program(Some(&p));
         uniform2(&gl, &p, "camera", 0.45, 0.25);
+        uniform_i(&gl, &p, "shellMode", 0);
         uniform1(&gl, &p, "density", 2.0);
         uniform1(&gl, &p, "cut", 0.04);
         uniform2(&gl, &p, "range", 0.0, 1.0);
@@ -384,6 +385,24 @@ impl VolumeView {
             y / longest,
             z / longest,
         );
+        self.draw();
+        Ok(())
+    }
+    /// Render a spherical atmosphere with a quadrant removed. Radii are in
+    /// the unit texture cube (maximum radius 0.5); data remain Cartesian.
+    pub fn set_spherical_shell(
+        &self,
+        inner: f32,
+        outer: f32,
+        enabled: bool,
+    ) -> Result<(), JsValue> {
+        if !inner.is_finite() || !outer.is_finite() || inner <= 0.0 || outer <= inner || outer > 0.5
+        {
+            return Err(error("Shell radii require 0 < inner < outer <= 0.5"));
+        }
+        self.gl.use_program(Some(&self.p));
+        uniform_i(&self.gl, &self.p, "shellMode", i32::from(enabled));
+        uniform2(&self.gl, &self.p, "shellRadii", inner, outer);
         self.draw();
         Ok(())
     }

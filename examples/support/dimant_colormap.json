@@ -1,0 +1,7 @@
+{
+  "source": "jvierine/sabmod reference/dimant_oppenheim/article_figure4.png",
+  "source_sha256": "b00f254b104bc197841ff77c37f06e02cd11696a835de8d6543ab63825ffbf17",
+  "extract": "RGB rows143:1297, column2040, reversed; same as plot_dimant_oppenheim.py",
+  "count": 1154,
+  "sha256": "5eecb185d3d37c00ef46c210e987b337f4b28d3587634e1ce0082d80b53a0f12"
+}

@@ -27,3 +27,7 @@ svg2pdf = { version = "0.13", optional = true }
 
 [profile.release]
 lto = "thin"
+
+[dev-dependencies]
+rustfft = "6.4"
+libm = "0.2"

@@ -21,7 +21,7 @@ an annotation obscures an important feature of the data.
 `Field::new(x_edges, y_edges, values, scale_id)` requires strictly increasing
 rectilinear cell edges. Values are indexed `j * nx + i`, with x varying fastest
 and y increasing upwards. A `QuadMesh` has explicit physical corner coordinates
-and flat values. Curvilinear SVG/PDF cells are vector polygons; dense
+and flat values. Curvilinear cells share one raster coverage buffer, preventing antialias seams. Dense
 rectilinear fields are rasterized to the figure's `raster_dpi`, default 300.
 
 `Contour::new(x, y, values, levels, scale_id, filled)` takes **nodal** values,
@@ -80,3 +80,18 @@ The volume renderer is scalar direct-volume rendering, not a fluid solver.
 Browser compilation requires no LaTeX. Generate or cache label SVGs on a machine
 with TeX, then serve them with the WASM package. See `web/src/app.ts` for the
 minimal host and `scripts/build_web.sh` for packaging.
+
+`Field::interpolate = true` enables bilinear interpolation at physical cell centres.
+The default is flat cells. Missing cells remain missing; interpolation does not bridge them.
+`ColorMap::listed` preserves a discrete color table exactly.
+
+`Surface` renders `z=f(x,y)` with interpolated colors, shading and a depth buffer.
+`Projection` provides orthographic and equirectangular coordinates, inverses,
+graticules, horizon clipping and antimeridian path breaks. The HEIMDALL example
+reuses its deployed WebGL2 renderer and frozen measured VTEC frames.
+
+TIE-GCM secondary histories can be converted with
+`conda run -n base python scripts/prepare_tiegcm.py history.nc --output model.h5`.
+It uses ZG for interface fields and ZGMID (or ZG interpolated in log pressure)
+for midpoint fields, with explicit unit conversion and no height extrapolation.
+[NCAR grid conventions](https://www.hao.ucar.edu/modeling/tgcm/tiegcm2.0/userguide/html/grid.html).

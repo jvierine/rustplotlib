@@ -18,9 +18,19 @@ with h5py.File(root / 'gallery/validation.h5', 'w') as f:
     f.attrs['passed'] = 1
     f.attrs['source_hashes_json'] = json.dumps(hashes, sort_keys=True)
     f.attrs['browser_checks_json'] = json.dumps(browser)
+    gallery_checks = root / 'validation/gallery-web.json'
+    if gallery_checks.exists():
+        checked = json.loads(gallery_checks.read_text())
+        assert checked['passed'] and checked['cards'] == 16 and not checked['errors']
+        f.attrs['gallery_browser_checks_json'] = json.dumps(checked)
     f.attrs['visual_inspection'] = 'Exact PDF raster, native PNG, desktop/mobile browser, volume frames'
     f.attrs['examples'] = 'Synthetic fields and analytic vortex rings'
-    for name, width in [('fields', 178.), ('single_column', 85.)]:
+    for name, width in [('fields', 178.), ('single_column', 85.),
+                        ('keogram', 178.), ('curvilinear', 85.),
+                        ('dispersion', 178.), ('normalizations', 178.),
+                        ('mobile', 103.2), ('desktop', 190.5), ('surfaces',178.), ('dimant_oppenheim',178.), ('dimant_surface',85.),('khi_summary',178.)]:
+        if not (root / 'gallery' / f'{name}.pdf').exists():
+            continue
         g = f.create_group(name)
         info = subprocess.check_output(['pdfinfo', str(root / 'gallery' / f'{name}.pdf')], text=True)
         match = re.search(r'Page size:\s+([\d.]+) x ([\d.]+) pts', info)

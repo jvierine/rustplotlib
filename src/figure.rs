@@ -118,6 +118,8 @@ pub struct Field {
     pub y_edges: Vec<f64>,
     pub values: Vec<f64>,
     pub scale: usize,
+    #[serde(default)]
+    pub interpolate: bool,
 }
 impl Field {
     pub fn new(
@@ -139,6 +141,7 @@ impl Field {
             y_edges,
             values,
             scale,
+            interpolate: false,
         })
     }
     pub fn sample(&self, x: f64, y: f64) -> f64 {
@@ -148,7 +151,39 @@ impl Field {
         let Some(j) = bin(&self.y_edges, y) else {
             return f64::NAN;
         };
-        self.values[j * (self.x_edges.len() - 1) + i]
+        let nx = self.x_edges.len() - 1;
+        let base = self.values[j * nx + i];
+        if !self.interpolate || !base.is_finite() {
+            return base;
+        }
+        let bracket = |e: &[f64], k: usize, q: f64| {
+            let center = |i: usize| (e[i] + e[i + 1]) * 0.5;
+            let a = if q < center(k) {
+                k.saturating_sub(1)
+            } else {
+                k
+            };
+            let b = (a + 1).min(e.len() - 2);
+            let t = if a == b {
+                0.0
+            } else {
+                ((q - center(a)) / (center(b) - center(a))).clamp(0.0, 1.0)
+            };
+            (a, b, t)
+        };
+        let (a, b, u) = bracket(&self.x_edges, i, x);
+        let (c, d, v) = bracket(&self.y_edges, j, y);
+        let q = [
+            self.values[c * nx + a],
+            self.values[c * nx + b],
+            self.values[d * nx + a],
+            self.values[d * nx + b],
+        ];
+        // Do not interpolate across a missing neighbour or fill masked cells.
+        if q.iter().any(|q| !q.is_finite()) {
+            return base;
+        }
+        (1.0 - v) * ((1.0 - u) * q[0] + u * q[1]) + v * ((1.0 - u) * q[2] + u * q[3])
     }
 }
 /// Curvilinear quadrilaterals, with (nx+1)*(ny+1) physical corner positions.
@@ -290,6 +325,7 @@ pub enum Layer {
     Line(Line),
     Pcolormesh(Field),
     QuadMesh(QuadMesh),
+    Surface(crate::Surface),
     Contour(Contour),
 }
 #[derive(Clone, Debug)]
@@ -398,6 +434,79 @@ pub struct Figure {
     pub check_label_bounds: bool,
     pub check_label_overlap: bool,
 }
+// Rasterize shared geometry into one coverage buffer. Independent antialiased
+// SVG paths leave background seams even when their corners coincide exactly.
+fn raster_mesh(f: &QuadMesh, p: &Panel, scale: &Scale, dpi: f64) -> image::RgbaImage {
+    let r = p.rect;
+    let w = (r.width * dpi / 25.4).ceil().max(1.0) as u32;
+    let h = (r.height * dpi / 25.4).ceil().max(1.0) as u32;
+    let mut img = image::RgbaImage::new(w, h);
+    let points: Vec<[f64; 2]> = f
+        .corners
+        .iter()
+        .map(|&v| {
+            let q = p.xy(v);
+            [
+                (q[0] - r.x) * w as f64 / r.width,
+                (q[1] - r.y) * h as f64 / r.height,
+            ]
+        })
+        .collect();
+    let cross = |a: [f64; 2], b: [f64; 2], q: [f64; 2]| {
+        (b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0])
+    };
+    for j in 0..f.ny {
+        for i in 0..f.nx {
+            let Some(color) = scale.map(f.values[j * f.nx + i]) else {
+                continue;
+            };
+            let a = j * (f.nx + 1) + i;
+            for ids in [[a, a + 1, a + f.nx + 2], [a, a + f.nx + 2, a + f.nx + 1]] {
+                let v = ids.map(|id| points[id]);
+                let area = cross(v[0], v[1], v[2]);
+                if area.abs() < 1e-14 {
+                    continue;
+                }
+                let x0 = v
+                    .iter()
+                    .map(|v| v[0])
+                    .fold(f64::INFINITY, f64::min)
+                    .floor()
+                    .max(0.0) as u32;
+                let x1 = v
+                    .iter()
+                    .map(|v| v[0])
+                    .fold(f64::NEG_INFINITY, f64::max)
+                    .ceil()
+                    .max(0.0)
+                    .min(w as f64) as u32;
+                let y0 = v
+                    .iter()
+                    .map(|v| v[1])
+                    .fold(f64::INFINITY, f64::min)
+                    .floor()
+                    .max(0.0) as u32;
+                let y1 = v
+                    .iter()
+                    .map(|v| v[1])
+                    .fold(f64::NEG_INFINITY, f64::max)
+                    .ceil()
+                    .max(0.0)
+                    .min(h as f64) as u32;
+                for y in y0..y1 {
+                    for x in x0..x1 {
+                        let q = [x as f64 + 0.5, y as f64 + 0.5];
+                        if (0..3).all(|k| cross(v[k], v[(k + 1) % 3], q) * area.signum() >= -1e-9) {
+                            img.put_pixel(x, y, image::Rgba(color));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    img
+}
+
 impl Figure {
     pub fn new(use_case: IntendedUse) -> Self {
         let (w, font) = use_case.dimensions();
@@ -492,6 +601,10 @@ impl Figure {
                                 && f.values.len() == (f.x_edges.len() - 1) * (f.y_edges.len() - 1),
                             "pcolormesh shape mismatch"
                         );
+                        f.scale
+                    }
+                    Layer::Surface(f) => {
+                        ensure!(f.scale < self.scales.len(), "Missing surface scale");
                         f.scale
                     }
                     Layer::QuadMesh(f) => {
@@ -599,23 +712,14 @@ impl Figure {
                     Layer::Pcolormesh(field) => self.image(&mut s, p, |x, y| {
                         self.scales[field.scale].map(field.sample(x, y))
                     })?,
+                    Layer::Surface(f) => {
+                        let w = (p.rect.width * self.raster_dpi / 25.4).ceil() as u32;
+                        let h = (p.rect.height * self.raster_dpi / 25.4).ceil() as u32;
+                        self.embed_image(&mut s, p.rect, f.raster(w, h, &self.scales[f.scale]))?;
+                    }
                     Layer::QuadMesh(f) => {
-                        let sc = &self.scales[f.scale];
-                        for j in 0..f.ny {
-                            for i in 0..f.nx {
-                                let Some(c) = sc.map(f.values[j * f.nx + i]) else {
-                                    continue;
-                                };
-                                let a = j * (f.nx + 1) + i;
-                                let ids = [a, a + 1, a + f.nx + 2, a + f.nx + 1];
-                                let mut path = String::new();
-                                for (k, id) in ids.into_iter().enumerate() {
-                                    let [x, y] = p.xy(f.corners[id]);
-                                    write!(path, "{} {x} {y} ", if k == 0 { "M" } else { "L" })?;
-                                }
-                                write!(s, "<path d=\"{path}Z\" fill=\"{}\"/>", rgb(c))?;
-                            }
-                        }
+                        let img = raster_mesh(f, p, &self.scales[f.scale], self.raster_dpi);
+                        self.embed_image(&mut s, p.rect, img)?;
                     }
                     Layer::Contour(c) => {
                         let scale = &self.scales[c.scale];
@@ -759,14 +863,29 @@ impl Figure {
                 if b.horizontal { "0" } else { "1" },
                 if b.horizontal { "1" } else { "0" }
             )?;
-            for i in 0..=64 {
-                let t = i as f64 / 64.0;
-                let c = sc.colors.sample(t);
-                write!(
-                    s,
-                    "<stop offset=\"{t}\" stop-color=\"rgb({},{},{})\"/>",
-                    c[0], c[1], c[2]
-                )?;
+            if sc.colors.listed {
+                let n = sc.colors.stops.len();
+                for i in 0..n {
+                    let c = sc.colors.sample((i as f64 + 0.5) / n as f64);
+                    for t in [i as f64 / n as f64, (i + 1) as f64 / n as f64] {
+                        write!(
+                            s,
+                            "<stop offset=\"{t}\" stop-color=\"rgb({},{},{})\"/>",
+                            c[0], c[1], c[2]
+                        )?;
+                    }
+                }
+            } else {
+                let n = (sc.colors.stops.len() - 1).max(64);
+                for i in 0..=n {
+                    let t = i as f64 / n as f64;
+                    let c = sc.colors.sample(t);
+                    write!(
+                        s,
+                        "<stop offset=\"{t}\" stop-color=\"rgb({},{},{})\"/>",
+                        c[0], c[1], c[2]
+                    )?;
+                }
             }
             write!(
                 s,
@@ -868,6 +987,9 @@ impl Figure {
                 img.put_pixel(i, j, image::Rgba(sample(xx, yy).unwrap_or([0, 0, 0, 0])));
             }
         }
+        self.embed_image(s, r, img)
+    }
+    fn embed_image(&self, s: &mut String, r: Rect, img: image::RgbaImage) -> Result<()> {
         let mut bytes = Cursor::new(vec![]);
         img.write_to(&mut bytes, image::ImageFormat::Png)?;
         write!(
@@ -1055,6 +1177,7 @@ pub fn number(x: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{ColorMap, Normalization};
     #[test]
     fn nonuniform_cells_missing_values_and_contours() {
         let f = Field::new(vec![0.0, 1.0, 3.0], vec![0.0, 2.0], vec![1.0, f64::NAN], 0).unwrap();
@@ -1075,6 +1198,29 @@ mod tests {
                 assert!((p[0] + p[1] - 1.5).abs() < 1e-12)
             }
         }
+    }
+    #[test]
+    fn shared_curvilinear_cells_have_no_internal_seams() {
+        let mesh = QuadMesh::new(
+            2,
+            1,
+            vec![[0., 0.], [0.6, 0.], [1., 0.], [0., 1.], [0.4, 1.], [1., 1.]],
+            vec![0.5, 0.5],
+            0,
+        )
+        .unwrap();
+        let panel = Panel::new(
+            Rect::new(0., 0., 25.4, 25.4),
+            Axes::new([0., 1.], [0., 1.], "", ""),
+        );
+        let scale = Scale::new([0., 1.], Normalization::Linear, ColorMap::diverging()).unwrap();
+        let image = raster_mesh(&mesh, &panel, &scale, 128.);
+        assert!(image.pixels().all(|p| p[3] == 255));
+        let mut masked = mesh.clone();
+        masked.values[1] = f64::NAN;
+        let image = raster_mesh(&masked, &panel, &scale, 128.);
+        assert_eq!(image.get_pixel(115, 64)[3], 0);
+        assert_eq!(image.get_pixel(12, 64)[3], 255);
     }
     #[test]
     fn profiles_are_readable_and_golden() {

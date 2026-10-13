@@ -149,5 +149,6 @@ fn main() -> Result<()> {
     panel.labels.push(label);
     one.save(Path::new(&dir).join("single_column.pdf"))?;
     one.save(Path::new(&dir).join("single_column.png"))?;
+    one.save(Path::new(&dir).join("single_column.svg"))?;
     Ok(())
 }

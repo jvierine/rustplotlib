@@ -8,5 +8,12 @@ mkdir -p web/dist
 npx esbuild web/src/app.ts --bundle --format=esm --outfile=web/dist/app.js
 cp web/pkg/rustplotlib_web_bg.wasm web/dist/
 cargo run --release --example web_data
+cargo run --release --example surfaces
+cargo run --release --example gallery
 mkdir -p web/gallery
-cp gallery/fields.{pdf,png,jpg,svg} gallery/single_column.pdf web/gallery/
+cp -R gallery/* web/gallery/
+cargo run --release --example atmosphere
+npx esbuild web/src/heimdall.ts --bundle --format=esm --outfile=web/dist/heimdall.js
+npx esbuild web/src/atmosphere.ts --bundle --format=esm --outfile=web/dist/atmosphere.js
+
+cargo run --release --example heimdall_labels
