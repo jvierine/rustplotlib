@@ -451,10 +451,15 @@ fn index() -> Result<()> {
         (
             "syisr_khi_ion_up",
             "Ion drift and background shear",
-            "Upward magnetic ion drift with an aligned background-wind profile. Simulated, not an observed fit.",
+            "The 60-minute Ri=0.08 snapshot: upward magnetic ion drift with an equal-height background-wind profile, LaTeX labels and a signed color scale. Animation below. Simulated, not an observed fit.",
         ),
     ] {
-        html.push_str(&format!(r#"<article><h2>{title}</h2><video controls playsinline preload="metadata" poster="{name}.png" style="width:100%;height:auto"><source src="{name}.mp4" type="video/mp4"></video><p>{description}</p><div class="links"><a href="{name}.mp4">MP4</a><a href="{name}.pdf">Scientific PDF</a><a href="https://github.com/jvierine/rustplotlib/blob/main/examples/syisr_khi.rs">Rust source</a></div></article>"#));
+        let snapshot = if name == "syisr_khi_ion_up" {
+            format!(r#"<a href="{name}.pdf"><img src="{name}.png" alt="Upward ion drift at 60 minutes and aligned background wind"></a>"#)
+        } else {
+            String::new()
+        };
+        html.push_str(&format!(r#"<article><h2>{title}</h2>{snapshot}<video controls playsinline preload="metadata" poster="{name}.png" style="width:100%;height:auto"><source src="{name}.mp4" type="video/mp4"></video><p>{description}</p><div class="links"><a href="{name}.mp4">MP4</a><a href="{name}.pdf">Scientific PDF</a><a href="https://github.com/jvierine/rustplotlib/blob/main/examples/syisr_khi.rs">Rust source</a></div></article>"#));
         md.push_str(&format!("## {title}\n\n![{title}]({name}.png)\n\n{description} [MP4]({name}.mp4) · [PDF]({name}.pdf) · [Rust source](../examples/syisr_khi.rs)\n\n"));
     }
     html.push_str("</main></html>");
