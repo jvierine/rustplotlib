@@ -38,32 +38,32 @@ Click a figure to open its PDF, animation, or interactive view.
 | Curvilinear mesh | Acoustic–gravity dispersion |
 |:--:|:--:|
 | [![Curvilinear mesh](gallery/curvilinear.png)](gallery/curvilinear.pdf) | [![Acoustic–gravity dispersion](gallery/dispersion.png)](gallery/dispersion.pdf) |
-| [PDF](gallery/curvilinear.pdf) · [Rust/source](examples/gallery.rs) | [PDF](gallery/dispersion.pdf) · [Rust/source](examples/gallery.rs) |
+| [PDF](gallery/curvilinear.pdf) · [Source](examples/gallery.rs) | [PDF](gallery/dispersion.pdf) · [Source](examples/gallery.rs) |
 
 | KHI evolution and diagnostics | Dimant–Oppenheim density surface |
 |:--:|:--:|
 | [![KHI evolution and diagnostics](gallery/khi_summary.png)](gallery/khi_summary.pdf) | [![Dimant–Oppenheim density surface](gallery/dimant_surface.png)](gallery/dimant_surface.pdf) |
-| [PDF](gallery/khi_summary.pdf) · [Rust/source](examples/khi_summary.rs) | [PDF](gallery/dimant_surface.pdf) · [Rust/source](examples/dimant_oppenheim.rs) |
+| [PDF](gallery/khi_summary.pdf) · [Source](examples/khi_summary.rs) | [PDF](gallery/dimant_surface.pdf) · [Source](examples/dimant_oppenheim.rs) |
 
 | Kelvin–Helmholtz instability | Measured HEIMDALL TEC |
 |:--:|:--:|
 | [![Kelvin–Helmholtz instability](gallery/khi.png)](gallery/khi.gif) | [![Measured HEIMDALL TEC](gallery/heimdall.png)](https://jvierine.github.io/rustplotlib/heimdall.html) |
-| [PDF](gallery/khi.pdf) · [Rust/source](examples/khi.rs) | [PDF](gallery/heimdall.pdf) · [Rust/source](web/src/heimdall.ts) |
+| [PDF](gallery/khi_t0.pdf) · [Source](examples/khi.rs) | [PDF](gallery/heimdall.pdf) · [Source](web/src/heimdall.ts) |
 
 | GAMERA current paths | SMILE UVI on Earth |
 |:--:|:--:|
 | [![GAMERA current paths](gallery/currents.png)](https://jvierine.github.io/rustplotlib/currents.html) | [![SMILE UVI on Earth](gallery/smile.png)](https://jvierine.github.io/rustplotlib/smile.html) |
-| [PDF](gallery/currents.pdf) · [Rust/source](examples/scientific_views.rs) | [PDF](gallery/smile.pdf) · [Rust/source](examples/scientific_views.rs) |
+| [PDF](gallery/currents.pdf) · [Source](examples/scientific_views.rs) | [PDF](gallery/smile.pdf) · [Source](examples/scientific_views.rs) |
 
 | TIE-GCM heating pulse | Damped oscillations at article-column size |
 |:--:|:--:|
 | [![TIE-GCM heating pulse](gallery/tiegcm.png)](gallery/tiegcm.pdf) | [![Damped oscillations at article-column size](gallery/single_column.png)](gallery/single_column.pdf) |
-| [PDF](gallery/tiegcm.pdf) · [Rust/source](examples/tiegcm.rs) | [PDF](gallery/single_column.pdf) · [Rust/source](examples/publication.rs) |
+| [PDF](gallery/tiegcm.pdf) · [Source](examples/tiegcm.rs) | [PDF](gallery/single_column.pdf) · [Source](examples/publication.rs) |
 
 | KHI electron-density animation | Ion drift and background wind |
 |:--:|:--:|
 | [![KHI electron-density animation](gallery/syisr_khi_density.gif)](gallery/syisr_khi_density.mp4) | [![Ion drift and background wind](gallery/syisr_khi_ion_up.gif)](gallery/syisr_khi_ion_up.mp4) |
-| [PDF](gallery/syisr_khi_density.pdf) · [Rust/source](examples/syisr_khi.rs) | [PDF](gallery/syisr_khi_ion_up.pdf) · [Rust/source](examples/syisr_khi.rs) |
+| [PDF](gallery/syisr_khi_density.pdf) · [Source](examples/syisr_khi.rs) | [PDF](gallery/syisr_khi_ion_up.pdf) · [Source](examples/syisr_khi.rs) |
 
 The KHI cases are simulated demonstrations, not observational fits.
 [Browse all examples](gallery/README.md).
