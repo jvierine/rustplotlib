@@ -19,7 +19,7 @@ fn edges(v: &[f64]) -> Vec<f64> {
 fn main() -> Result<()> {
     let m: Meta = serde_json::from_slice(&fs::read("output/tiegcm/geometry.json")?)?;
     let mut f = Figure::new(IntendedUse::ArticleWide);
-    f.height_mm = 196.;
+    f.height_mm = 144.;
     f.labels
         .push(Label::new("TIE-GCM: a heating pulse over Tromsø", 89., 5.));
     f.labels.push(Label::new(
@@ -44,7 +44,8 @@ fn main() -> Result<()> {
             vals.len() == m.distance.len() * m.altitude.len(),
             "Section shape mismatch"
         );
-        let y = 26. + k as f64 * 36.;
+        // Transparent curved sections can nest without changing their physical scale.
+        let y = 21. + k as f64 * 22.;
         let mut p = Panel::new(
             Rect::new(15., y, 150., 32.8125),
             Axes::new([-4000., 4000.], [-1200., 550.], "", ""),
@@ -67,22 +68,46 @@ fn main() -> Result<()> {
             l.width_pt = if alt == 0. { 0.65 } else { 0.3 };
             p.push(Layer::Line(l));
         }
+        for latitude in [80., 70., 60., 50., 40., 30.] {
+            let distance = (69.65 - latitude) * std::f64::consts::PI / 180. * 6371.;
+            if distance < d[0] || distance > d[d.len() - 1] {
+                continue;
+            }
+            let a = (distance - mid) / 6371.;
+            let radial = |height: f64| {
+                [
+                    (6371. + height) * a.sin(),
+                    (6371. + height) * a.cos() - 6371.,
+                ]
+            };
+            let mut tick = Line::new(vec![radial(0.), radial(-65.)], "#61727c");
+            tick.width_pt = 0.55;
+            p.push(Layer::Line(tick));
+            if k == m.frames.len() - 1 {
+                let q = radial(-190.);
+                f.labels.push(Label::new(
+                    format!(r"${latitude:.0}^\circ\mathrm{{N}}$"),
+                    15. + (q[0] + 4000.) / 8000. * 150.,
+                    y + (550. - q[1]) / 1750. * 32.8125,
+                ));
+            }
+        }
         f.labels.push(Label::new(
             format!("{} min", (m.time_s[frame] / 60.) as i32),
-            158.,
+            170.5,
             y + 3.,
         ));
         f.panels.push(p);
     }
-    f.labels.push(Label::new("North", 18., 174.));
-    f.labels.push(Label::new("South", 159., 174.));
+    f.labels.push(Label::new("North", 18., 121.));
+    f.labels.push(Label::new("South", 159., 121.));
     f.labels.push(Label::new(
         "Heights 100–500 km; spherical geometry",
         89.,
-        174.,
+        121.,
     ));
     let mut b = Colorbar::new(
-        Rect::new(40., 181., 98., 2.5),
+        Rect::new(40., 128., 98., 2.5),
         sc,
         r"$\Delta T\;[\mathrm K]$",
         vec![-12.5, 0., 12.5],
