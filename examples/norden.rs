@@ -296,7 +296,7 @@ fn main() -> Result<()> {
     let alt = hf.dataset("altitude_edges_km")?.read_raw::<f64>()?;
     let vals = hf.dataset("delta_temperature_K")?.read_raw::<f64>()?;
     let temperature = fig.scale(Scale::new([-12.5, 12.5], Normalization::Linear,
-        ColorMap::diverging())?);
+        ColorMap::seismic())?);
     let ax = Axes::new([-1.445, 1.015], [-1.015, 1.015], "", "");
     let mut curtain = Panel::new(Rect::new(78.02, 9., 79.98, 66.), ax);
     curtain.axes_visible = false;
@@ -330,7 +330,7 @@ fn main() -> Result<()> {
         (
             Rect::new(15., 78., 57., 1.6),
             tec,
-            r"dTEC (TECU; 10 min)",
+            r"$\delta\mathrm{TEC}$ (TECU; 10 min)",
             vec![-LIMIT, 0., LIMIT],
         ),
         (
