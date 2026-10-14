@@ -172,10 +172,7 @@ fn main() -> Result<()> {
     fig.raster_dpi = 600.;
     fig.tight_export = false;
     fig.latex.cache = root.join("tmp/rustplotlib-latex");
-    fig.latex.preamble = r"\usepackage[T1]{fontenc}
-\usepackage{amsmath,amssymb,helvet,sansmath}
-\renewcommand{\familydefault}{\sfdefault}\sansmath"
-        .into();
+    // Keep the default LaTeX text and math fonts, matching the publication examples.
     let tec = fig.scale(Scale::new(
         [-LIMIT, LIMIT],
         Normalization::Linear,
@@ -266,6 +263,27 @@ fn main() -> Result<()> {
     )?));
     geography(&mut left, &root)?;
     geography(&mut right, &root)?;
+    let orbit_file = hdf5::File::open(root.join("data/aissat1_figure_orbit.h5"))?;
+    let orbit_lon = orbit_file.dataset("longitude_deg")?.read_raw::<f64>()?;
+    let orbit_lat = orbit_file
+        .dataset("geocentric_latitude_deg")?
+        .read_raw::<f64>()?;
+    let orbit: Vec<_> = orbit_lon
+        .iter()
+        .zip(&orbit_lat)
+        .map(|(&lo, &la)| [lo, la])
+        .collect();
+    // White casing keeps the real ground track visible over both scientific layers.
+    for (color, width) in [("#ffffff", 2.2), ("#145b7a", 1.1)] {
+        let mut track = VIEW.line(&orbit, color);
+        track.width_pt = width;
+        left.push(Layer::Line(track));
+    }
+    let orbit_anchor = orbit
+        .iter()
+        .filter_map(|&p| VIEW.project(p))
+        .min_by(|a, b| a[0].total_cmp(&b[0]))
+        .context("No visible orbit")?;
     let footprint: Vec<_> = [[17., 68.], [17., 72.], [27., 72.], [27., 68.], [17., 68.]]
         .into_iter()
         .map(|p| VIEW.project(p).unwrap())
@@ -273,9 +291,9 @@ fn main() -> Result<()> {
     line(&mut right, footprint, TEAL, 1.0);
     fig.panels.extend([left, right]);
     fig.labels
-        .push(Label::new(r"\textbf{a\quad SMILE + GNSS dTEC}", 41., 4.));
+        .push(Label::new(r"\textbf{a\quad SMILE + GNSS}", 41., 4.));
     fig.labels
-        .push(Label::new(r"\textbf{b\quad MAGE + TIE-GCM}", 125., 4.));
+        .push(Label::new(r"\textbf{b\quad MAGE}", 125., 4.));
     let mut e = Label::new("EISCAT3D", 146., 34.);
     e.color = TEAL.into();
     fig.labels.push(e);
@@ -320,6 +338,20 @@ fn main() -> Result<()> {
     }
     line(&mut drag, points.clone(), "#145b7a", 0.55);
     fig.panels.push(drag);
+    fig.connectors.push(Connector {
+        from_panel: 0,
+        from: orbit_anchor,
+        to_panel: 2,
+        to: [points[0][0], 12.],
+        via: vec![
+            [3., 9. + (1.015 - orbit_anchor[1]) / 2.03 * 66.],
+            [3., 90.],
+            [15., 90.],
+            [15., 98.],
+        ],
+        color: "#145b7a".into(),
+        width_pt: 0.6,
+    });
     fig.labels.push(Label::new(
         r"\textbf{c\quad AISSat-1 orbital decay}",
         46.5,
