@@ -108,3 +108,16 @@ heights.
 Label/colorbar and axis/panel collisions produce a warning and fail export by
 default. `Figure::check_label_geometry=false` permits intentional overlaps;
 label bounds and label-to-label checks remain independent.
+
+`PolygonMesh::new(polygons, values, scale)` accepts independent finite-vertex
+cells, such as projected HEALPix footprints. A shared scanline raster avoids
+seams; missing scalar values remain transparent. Coordinates use the panel axes.
+
+`Axes::xticklabels` and `yticklabels` optionally provide LaTeX strings, one per
+numeric tick. These label calendar times without changing the plotted coordinates.
+`Connector` links data positions in two panels through optional `via` waypoints
+in figure millimetres from the top left. Add it to `Figure::connectors`.
+
+`ColorMap::seismic()` and `inferno()` provide the standard 256-entry tables.
+Listed colour bars use lookup-table image strips rather than large PDF stitching
+functions, preserving their discrete colours and avoiding PDF-reader limits.

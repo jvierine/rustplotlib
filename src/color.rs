@@ -15,6 +15,39 @@ pub struct ColorMap {
     pub listed: bool,
 }
 impl ColorMap {
+    /// Blue-white-red seismic palette, with the standard 256-entry lookup table.
+    pub fn seismic() -> Self {
+        let continuous = Self {
+            listed: false,
+            stops: vec![
+                [0., 0., 0.3],
+                [0., 0., 1.],
+                [1., 1., 1.],
+                [1., 0., 0.],
+                [0.5, 0., 0.],
+            ],
+        };
+        Self {
+            listed: true,
+            stops: (0..256)
+                .map(|i| {
+                    let u = i as f64 / 255. * 4.;
+                    let k = (u.floor() as usize).min(3);
+                    let t = u - k as f64;
+                    std::array::from_fn(|j| {
+                        continuous.stops[k][j] * (1. - t) + continuous.stops[k + 1][j] * t
+                    })
+                })
+                .collect(),
+        }
+    }
+    /// Standard perceptually uniform inferno lookup table (Smith and van der Walt).
+    pub fn inferno() -> Self {
+        Self {
+            listed: true,
+            stops: crate::palettes::INFERNO.to_vec(),
+        }
+    }
     pub fn new(stops: Vec<[f64; 3]>) -> Result<Self> {
         ensure!(
             stops.len() >= 2

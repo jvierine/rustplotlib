@@ -74,6 +74,8 @@ Panels can also be positioned freely in millimetres. Axes are optional.
 
 - Rectilinear and curvilinear `pcolormesh`; `contour` and `contourf`.
 - Shared or independent colorbars; linear, log and signed-asinh scales.
+- Seamless arbitrary-cell `PolygonMesh` rendering, with missing values preserved.
+- Exact seismic/inferno palettes, custom axis tick labels and routed panel connectors.
 - PDF, PNG, JPEG and SVG. Missing values remain missing.
 - Rust/WASM + WebGL2 field and volume renderers, playback and orbit controls.
 
@@ -125,3 +127,24 @@ Secondary horizontal axes use `Axes::secondary_x` with
 `SecondaryAxis::new(label, ticks, to_primary)`. The inverse coordinate mapping
 positions ticks on the primary scale, including nonlinear reciprocal mappings.
 See [the secondary-axis example](examples/secondary_axis.rs).
+
+### Observation/model composite
+
+`examples/norden.rs` reads external archived HDF5 observations and model fields
+from a NORDEN proposal checkout. It combines orthographic globes, sparse TEC
+polygons, vector coastlines, orbital-decay time series and a linked radar inset.
+The input data are not bundled with this library. This example also requires
+Ghostscript (`gs`), which normalizes shared PDF resources for XeLaTeX inclusion
+without rasterizing vector geometry or downsampling images. Labels use 9 pt LaTeX at the
+intended 170 mm publication width; the source fields and their masks are retained.
+
+```sh
+HDF5_DIR=/opt/anaconda3 cargo build --release --features hdf5-examples --example norden
+DYLD_LIBRARY_PATH=/opt/anaconda3/lib target/release/examples/norden /path/to/norden
+```
+
+These paths use a local conda HDF5 installation on macOS; on other systems use
+the installed HDF5 development library. The example writes PDF, PNG, SVG and
+an HDF5 record of plotted samples. `Axes::xticklabels` / `yticklabels` change
+only displayed text, not coordinates. `Figure::connectors` links data positions
+in two panels through optional millimetre waypoints.

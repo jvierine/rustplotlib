@@ -102,6 +102,9 @@ pub struct Axes {
     pub ylabel: String,
     pub xticks: Vec<f64>,
     pub yticks: Vec<f64>,
+    /// Optional LaTeX text for each tick, e.g. calendar times. Positions stay numeric.
+    pub xticklabels: Option<Vec<String>>,
+    pub yticklabels: Option<Vec<String>>,
     pub secondary_x: Option<SecondaryAxis>,
 }
 impl Axes {
@@ -118,6 +121,8 @@ impl Axes {
             ylabel: ylabel.into(),
             xticks: ticks(xlim, 5),
             yticks: ticks(ylim, 4),
+            xticklabels: None,
+            yticklabels: None,
             secondary_x: None,
         }
     }
@@ -355,8 +360,55 @@ pub enum Layer {
     Line(Line),
     Pcolormesh(Field),
     QuadMesh(QuadMesh),
+    /// Independent polygons, for irregular cells such as projected HEALPix data.
+    PolygonMesh(PolygonMesh),
     Surface(crate::Surface),
     Contour(Contour),
+}
+
+/// Independently sampled polygon cells. Missing values leave transparent holes.
+#[derive(Clone, Debug)]
+pub struct PolygonMesh {
+    pub polygons: Vec<Vec<[f64; 2]>>,
+    pub values: Vec<f64>,
+    pub scale: usize,
+}
+impl PolygonMesh {
+    pub fn new(polygons: Vec<Vec<[f64; 2]>>, values: Vec<f64>, scale: usize) -> Result<Self> {
+        let mesh = Self {
+            polygons,
+            values,
+            scale,
+        };
+        mesh.validate()?;
+        Ok(mesh)
+    }
+    fn validate(&self) -> Result<()> {
+        ensure!(
+            self.polygons.len() == self.values.len(),
+            "Polygon/value count mismatch"
+        );
+        ensure!(
+            self.polygons
+                .iter()
+                .all(|p| p.len() >= 3 && p.iter().flatten().all(|v| v.is_finite())),
+            "Polygons need at least three finite vertices"
+        );
+        Ok(())
+    }
+}
+
+/// A data-anchored connection between panels, routed through figure coordinates
+/// (millimetres from the top-left). Routes can avoid axes and colour bars.
+#[derive(Clone, Debug)]
+pub struct Connector {
+    pub from_panel: usize,
+    pub from: [f64; 2],
+    pub to_panel: usize,
+    pub to: [f64; 2],
+    pub via: Vec<[f64; 2]>,
+    pub color: String,
+    pub width_pt: f64,
 }
 #[derive(Clone, Debug)]
 pub struct Panel {
@@ -460,6 +512,7 @@ pub struct Figure {
     pub colorbars: Vec<Colorbar>,
     pub labels: Vec<Label>,
     pub scales: Vec<Scale>,
+    pub connectors: Vec<Connector>,
     pub latex: Latex,
     pub raster_dpi: f64,
     /// Fail on cropped or colliding label boxes; explicitly disable for intentional overlays.
@@ -544,6 +597,68 @@ fn raster_mesh(f: &QuadMesh, p: &Panel, scale: &Scale, dpi: f64) -> image::RgbaI
     img
 }
 
+fn tick_label(value: f64, labels: &Option<Vec<String>>, index: usize) -> String {
+    labels
+        .as_ref()
+        .map(|v| v[index].clone())
+        .unwrap_or_else(|| number(value))
+}
+
+// Scanline coverage of independent cells avoids antialiased seams between
+// adjacent SVG polygons. The even-odd fill also supports concave footprints.
+fn raster_polygons(mesh: &PolygonMesh, panel: &Panel, scale: &Scale, dpi: f64) -> image::RgbaImage {
+    let r = panel.rect;
+    let w = (r.width * dpi / 25.4).ceil().max(1.) as u32;
+    let h = (r.height * dpi / 25.4).ceil().max(1.) as u32;
+    let mut out = image::RgbaImage::new(w, h);
+    for (vertices, value) in mesh.polygons.iter().zip(&mesh.values) {
+        let Some(color) = scale.map(*value) else {
+            continue;
+        };
+        let p: Vec<_> = vertices
+            .iter()
+            .map(|&v| {
+                let q = panel.xy(v);
+                [
+                    (q[0] - r.x) * w as f64 / r.width,
+                    (q[1] - r.y) * h as f64 / r.height,
+                ]
+            })
+            .collect();
+        let lo = p
+            .iter()
+            .map(|q| q[1])
+            .fold(f64::INFINITY, f64::min)
+            .floor()
+            .max(0.) as u32;
+        let hi = p
+            .iter()
+            .map(|q| q[1])
+            .fold(f64::NEG_INFINITY, f64::max)
+            .ceil()
+            .clamp(0., h as f64) as u32;
+        for y in lo..hi {
+            let scan = y as f64 + 0.5;
+            let mut cuts = Vec::new();
+            for i in 0..p.len() {
+                let (a, b) = (p[i], p[(i + 1) % p.len()]);
+                if (a[1] <= scan && b[1] > scan) || (b[1] <= scan && a[1] > scan) {
+                    cuts.push(a[0] + (scan - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
+                }
+            }
+            cuts.sort_by(f64::total_cmp);
+            for pair in cuts.chunks_exact(2) {
+                let x0 = (pair[0] - 0.5).ceil().clamp(0., w as f64) as u32;
+                let x1 = (pair[1] - 0.5).ceil().clamp(0., w as f64) as u32;
+                for x in x0..x1 {
+                    out.put_pixel(x, y, image::Rgba(color));
+                }
+            }
+        }
+    }
+    out
+}
+
 impl Figure {
     pub fn new(use_case: IntendedUse) -> Self {
         let (w, font) = use_case.dimensions();
@@ -555,6 +670,7 @@ impl Figure {
             colorbars: vec![],
             labels: vec![],
             scales: vec![],
+            connectors: vec![],
             latex: Latex {
                 font_pt: font,
                 ..Latex::default()
@@ -615,6 +731,17 @@ impl Figure {
         }
         for p in &self.panels {
             ensure!(p.rect.valid(), "Invalid panel rectangle");
+            if let Some(a) = &p.axes {
+                for (ticks, labels) in [(&a.xticks, &a.xticklabels), (&a.yticks, &a.yticklabels)] {
+                    ensure!(ticks.iter().all(|v| v.is_finite()), "Non-finite axis tick");
+                    ensure!(
+                        labels.as_ref().is_none_or(
+                            |l| l.len() == ticks.len() && l.iter().all(|s| !s.is_empty())
+                        ),
+                        "Tick label count must match tick positions and labels must be nonempty"
+                    );
+                }
+            }
             let (x, y) = p.limits();
             ensure!(
                 x[0].is_finite()
@@ -662,6 +789,10 @@ impl Figure {
                         );
                         f.scale
                     }
+                    Layer::PolygonMesh(f) => {
+                        f.validate()?;
+                        f.scale
+                    }
                     Layer::Contour(f) => {
                         ensure!(
                             increasing(&f.x)
@@ -690,6 +821,22 @@ impl Figure {
                 "Colorbar ticks outside scale"
             );
         }
+        for c in &self.connectors {
+            ensure!(
+                c.from_panel < self.panels.len() && c.to_panel < self.panels.len(),
+                "Unknown connector panel"
+            );
+            ensure!(
+                c.from
+                    .iter()
+                    .chain(c.to.iter())
+                    .chain(c.via.iter().flatten())
+                    .all(|v| v.is_finite())
+                    && c.width_pt.is_finite()
+                    && c.width_pt >= 0.,
+                "Invalid connector coordinates or width"
+            );
+        }
         Ok(())
     }
     fn all_labels(&self) -> Vec<String> {
@@ -699,7 +846,18 @@ impl Figure {
                 && p.axes_visible
             {
                 v.extend([a.xlabel.clone(), a.ylabel.clone()]);
-                v.extend(a.xticks.iter().chain(&a.yticks).map(|x| number(*x)));
+                v.extend(
+                    a.xticks
+                        .iter()
+                        .enumerate()
+                        .map(|(i, x)| tick_label(*x, &a.xticklabels, i)),
+                );
+                v.extend(
+                    a.yticks
+                        .iter()
+                        .enumerate()
+                        .map(|(i, x)| tick_label(*x, &a.yticklabels, i)),
+                );
                 if let Some(top) = &a.secondary_x {
                     v.push(top.label.clone());
                     v.extend(top.ticks.iter().map(|(_, v)| number(*v)));
@@ -773,6 +931,13 @@ impl Figure {
                         let img = raster_mesh(f, p, &self.scales[f.scale], self.raster_dpi);
                         self.embed_image(&mut s, p.rect, img)?;
                     }
+                    Layer::PolygonMesh(f) => {
+                        self.embed_image(
+                            &mut s,
+                            p.rect,
+                            raster_polygons(f, p, &self.scales[f.scale], self.raster_dpi),
+                        )?;
+                    }
                     Layer::Contour(c) => {
                         let scale = &self.scales[c.scale];
                         if c.filled {
@@ -828,7 +993,7 @@ impl Figure {
                     r.y,
                     r.y + r.height
                 )?;
-                for v in &a.xticks {
+                for (i, v) in a.xticks.iter().enumerate() {
                     if *v < a.xlim[0] || *v > a.xlim[1] {
                         continue;
                     }
@@ -840,7 +1005,7 @@ impl Figure {
                     place(
                         &mut s,
                         &glyphs,
-                        &number(*v),
+                        &tick_label(*v, &a.xticklabels, i),
                         x,
                         y + 0.95 * em,
                         0.0,
@@ -891,7 +1056,7 @@ impl Figure {
                         &mut label_bounds,
                     )?;
                 }
-                for v in &a.yticks {
+                for (i, v) in a.yticks.iter().enumerate() {
                     if *v < a.ylim[0] || *v > a.ylim[1] {
                         continue;
                     }
@@ -900,7 +1065,7 @@ impl Figure {
                         s,
                         "<path d=\"M {x} {y} h -1.2\" stroke=\"#444\" stroke-width=\"0.18\"/>"
                     )?;
-                    let text = number(*v);
+                    let text = tick_label(*v, &a.yticklabels, i);
                     let width = glyphs[&text].width_pt * MM_PER_PT;
                     place(
                         &mut s,
@@ -952,28 +1117,45 @@ impl Figure {
                 )?;
             }
         }
+        for c in &self.connectors {
+            let a = self.panels[c.from_panel].xy(c.from);
+            let b = self.panels[c.to_panel].xy(c.to);
+            let mut path = format!("M {} {}", a[0], a[1]);
+            for v in c.via.iter().chain(std::iter::once(&b)) {
+                write!(path, " L {} {}", v[0], v[1])?;
+            }
+            write!(
+                s,
+                "<path data-role=\"panel-connector\" d=\"{path}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" stroke-linejoin=\"round\"/>",
+                c.color,
+                c.width_pt * MM_PER_PT
+            )?;
+        }
         for (bi, b) in self.colorbars.iter().enumerate() {
             let sc = &self.scales[b.scale];
             let r = b.rect;
-            write!(
-                s,
-                "<defs><linearGradient id=\"bar-{bi}\" x1=\"0\" y1=\"{}\" x2=\"{}\" y2=\"0\">",
-                if b.horizontal { "0" } else { "1" },
-                if b.horizontal { "1" } else { "0" }
-            )?;
             if sc.colors.listed {
-                let n = sc.colors.stops.len();
+                // A lookup-table strip preserves discrete colours exactly and
+                // avoids huge PDF stitching functions (two stops per bin),
+                // which some TeX/PDF consumers cannot import safely.
+                let n = sc.colors.stops.len() as u32;
+                let mut strip = image::RgbaImage::new(
+                    if b.horizontal { n } else { 1 },
+                    if b.horizontal { 1 } else { n },
+                );
                 for i in 0..n {
                     let c = sc.colors.sample((i as f64 + 0.5) / n as f64);
-                    for t in [i as f64 / n as f64, (i + 1) as f64 / n as f64] {
-                        write!(
-                            s,
-                            "<stop offset=\"{t}\" stop-color=\"rgb({},{},{})\"/>",
-                            c[0], c[1], c[2]
-                        )?;
-                    }
+                    let (x, y) = if b.horizontal { (i, 0) } else { (0, n - 1 - i) };
+                    strip.put_pixel(x, y, image::Rgba([c[0], c[1], c[2], 255]));
                 }
+                self.embed_image(&mut s, r, strip)?;
             } else {
+                write!(
+                    s,
+                    "<defs><linearGradient id=\"bar-{bi}\" x1=\"0\" y1=\"{}\" x2=\"{}\" y2=\"0\">",
+                    if b.horizontal { "0" } else { "1" },
+                    if b.horizontal { "1" } else { "0" }
+                )?;
                 let n = (sc.colors.stops.len() - 1).max(64);
                 for i in 0..=n {
                     let t = i as f64 / n as f64;
@@ -984,12 +1166,12 @@ impl Figure {
                         c[0], c[1], c[2]
                     )?;
                 }
+                write!(
+                    s,
+                    "</linearGradient></defs><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"url(#bar-{bi})\"/>",
+                    r.x, r.y, r.width, r.height
+                )?;
             }
-            write!(
-                s,
-                "</linearGradient></defs><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"url(#bar-{bi})\"/>",
-                r.x, r.y, r.width, r.height
-            )?;
             let em = self.font_pt * MM_PER_PT;
             for v in &b.ticks {
                 let [a, z] = sc.limits.map(|x| sc.transform(x));
@@ -1356,6 +1538,55 @@ pub fn number(x: f64) -> String {
 mod tests {
     use super::*;
     use crate::{ColorMap, Normalization};
+    #[test]
+    fn polygon_cells_preserve_coverage_masks_and_winding() {
+        let polygons = vec![
+            vec![[0., 0.], [0.6, 0.], [0.4, 1.], [0., 1.]],
+            vec![[0.6, 0.], [1., 0.], [1., 1.], [0.4, 1.]],
+        ];
+        let p = Panel::new(
+            Rect::new(0., 0., 25.4, 25.4),
+            Axes::new([0., 1.], [0., 1.], "", ""),
+        );
+        let scale = Scale::new([0., 1.], Normalization::Linear, ColorMap::seismic()).unwrap();
+        let mut mesh = PolygonMesh::new(polygons, vec![0.5, 0.5], 0).unwrap();
+        let a = raster_polygons(&mesh, &p, &scale, 128.);
+        assert!(
+            a.pixels().all(|v| v[3] == 255),
+            "Adjacent polygons must not leave seams"
+        );
+        mesh.polygons[1].reverse();
+        assert_eq!(
+            a,
+            raster_polygons(&mesh, &p, &scale, 128.),
+            "Winding must not change coverage"
+        );
+        mesh.values[1] = f64::NAN;
+        let b = raster_polygons(&mesh, &p, &scale, 128.);
+        assert_eq!(b.get_pixel(115, 64)[3], 0);
+        assert_eq!(b.get_pixel(12, 64)[3], 255);
+        assert!(PolygonMesh::new(vec![vec![[0., 0.], [1., 0.]]], vec![1.], 0).is_err());
+        assert!(PolygonMesh::new(vec![], vec![1.], 0).is_err());
+    }
+    #[test]
+    fn custom_ticks_validate_shape_and_keep_text() {
+        let mut f = Figure::new(IntendedUse::ArticleWide);
+        let mut a = Axes::new([0., 24.], [0., 1.], "", "");
+        a.xticks = vec![0., 12., 24.];
+        a.xticklabels = Some(vec!["06".into(), "18".into(), "06".into()]);
+        f.panels.push(Panel::new(Rect::new(10., 10., 100., 40.), a));
+        assert!(f.validate().is_ok());
+        assert!(f.all_labels().contains(&"06".into()));
+        f.panels[0]
+            .axes
+            .as_mut()
+            .unwrap()
+            .xticklabels
+            .as_mut()
+            .unwrap()
+            .pop();
+        assert!(f.validate().is_err());
+    }
     #[test]
     fn nonuniform_cells_missing_values_and_contours() {
         let f = Field::new(vec![0.0, 1.0, 3.0], vec![0.0, 2.0], vec![1.0, f64::NAN], 0).unwrap();

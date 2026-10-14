@@ -8,10 +8,11 @@ pub mod latex;
 pub mod volume;
 pub use color::{ColorMap, Normalization, Scale};
 pub use figure::{
-    Axes, Colorbar, Contour, Field, Figure, IntendedUse, Label, Layer, Line, Panel, QuadMesh, Rect,
-    SecondaryAxis,
+    Axes, Colorbar, Connector, Contour, Field, Figure, IntendedUse, Label, Layer, Line, Panel,
+    PolygonMesh, QuadMesh, Rect, SecondaryAxis,
 };
 pub use latex::Latex;
+mod palettes;
 
 pub mod cartography;
 pub use cartography::Projection;

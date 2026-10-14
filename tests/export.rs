@@ -1,6 +1,56 @@
 use rustplotlib::*;
 use std::path::PathBuf;
 #[test]
+fn listed_colorbars_avoid_large_pdf_stitching_functions() {
+    let mut f = Figure::new(IntendedUse::ArticleWide);
+    let scale = f.scale(Scale::new([0., 1.], Normalization::Linear, ColorMap::inferno()).unwrap());
+    let mut bar = Colorbar::new(
+        Rect::new(20., 15., 100., 3.),
+        scale,
+        "Intensity",
+        vec![0., 1.],
+    );
+    bar.horizontal = true;
+    f.colorbars.push(bar);
+    let svg = f.svg().unwrap();
+    assert!(!svg.contains("linearGradient"));
+    assert!(svg.contains("data:image/png;base64,"));
+    f.save("target/listed-colorbar.pdf").unwrap();
+}
+#[test]
+fn routed_connector_and_calendar_ticks_export() {
+    let mut f = Figure::new(IntendedUse::ArticleWide);
+    f.tight_export = false;
+    let mut a = Axes::new([0., 24.], [0., 1.], "UT", "");
+    a.xticks = vec![0., 12., 24.];
+    a.xticklabels = Some(vec!["06".into(), "18".into(), "06".into()]);
+    f.panels.push(Panel::new(Rect::new(20., 15., 50., 25.), a));
+    f.panels.push(Panel::new(
+        Rect::new(100., 65., 50., 25.),
+        Axes::new([0., 1.], [0., 1.], "", ""),
+    ));
+    f.connectors.push(Connector {
+        from_panel: 0,
+        from: [24., 1.],
+        to_panel: 1,
+        to: [0., 1.],
+        via: vec![[85., 15.], [85., 65.]],
+        color: "#008080".into(),
+        width_pt: 0.5,
+    });
+    let s = f.svg().unwrap();
+    assert!(s.contains("data-role=\"panel-connector\" d=\"M 70 15 L 85 15 L 85 65 L 100 65\""));
+    f.save("target/connector-test.pdf").unwrap();
+    f.save("target/connector-test.png").unwrap();
+    f.connectors[0].from_panel = 4;
+    assert!(
+        f.svg()
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown connector panel")
+    );
+}
+#[test]
 fn real_latex_cache_and_all_export_formats() {
     let root = PathBuf::from("target/export-test");
     std::fs::create_dir_all(&root).unwrap();

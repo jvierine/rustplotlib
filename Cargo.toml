@@ -32,6 +32,10 @@ hdf5 = { package = "hdf5-metno", version = "0.12", optional = true }
 name = "syisr_khi"
 required-features = ["export", "hdf5-examples"]
 
+[[example]]
+name = "norden"
+required-features = ["export", "hdf5-examples"]
+
 [profile.release]
 lto = "thin"
 
