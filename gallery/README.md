@@ -67,6 +67,12 @@ Linear, signed-asinh and logarithmic magnitude views.
 
 [PDF](desktop.pdf) · [PNG](desktop.png) · [SVG](desktop.svg) · [Source](../examples/gallery.rs)
 
+## Reciprocal secondary axis
+
+![Reciprocal secondary axis](secondary_axis.png)
+
+An analytic buoyancy profile with height vertically and period on the top axis; not an MSIS atmosphere. [Source](../examples/secondary_axis.rs)
+
 ## Small multiples and diagnostics
 
 ![Small multiples and diagnostics](khi_summary.png)
@@ -145,6 +151,12 @@ Stacked analytic receiver traces with a shared arrival guide. [Source](../exampl
 
 Interactive temperature, density and wind demonstration fields. [Source](../examples/atmosphere.rs)
 
+## TIE-GCM heating-pulse evolution
+
+![TIE-GCM heating-pulse evolution](tiegcm_animation.png)
+
+One curved meridian panel through all 49 saved outputs (0–240 minutes, five-minute cadence), fixed colour scale and no temporal interpolation. The static four-panel figure is retained separately. [MP4](tiegcm_animation.mp4) · [PDF](tiegcm_animation.pdf) · [Rust source](../examples/tiegcm_animation.rs)
+
 ## KHI electron-density evolution
 
 ![KHI electron-density evolution](syisr_khi_density.png)
@@ -155,4 +167,4 @@ Two-hour Ri=0.08 model, following the mean zonal drift; no field clipping. [MP4]
 
 ![Ion drift and background shear](syisr_khi_ion_up.png)
 
-The 60-minute Ri=0.08 snapshot: upward magnetic ion drift with an equal-height background-wind profile, LaTeX labels and a signed color scale. Simulated, not an observed fit. [MP4](syisr_khi_ion_up.mp4) · [PDF](syisr_khi_ion_up.pdf) · [Rust source](../examples/syisr_khi.rs)
+The 60-minute Ri=0.08 snapshot: upward magnetic ion drift with an equal-height background-wind profile, LaTeX labels and a signed color scale. Animation below. Simulated, not an observed fit. [MP4](syisr_khi_ion_up.mp4) · [PDF](syisr_khi_ion_up.pdf) · [Rust source](../examples/syisr_khi.rs)

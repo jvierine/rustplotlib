@@ -451,6 +451,11 @@ fn index() -> Result<()> {
     }
     for (name, title, description) in [
         (
+            "tiegcm_animation",
+            "TIE-GCM heating-pulse evolution",
+            "One curved meridian panel through all 49 saved outputs (0–240 minutes, five-minute cadence), fixed colour scale and no temporal interpolation. The static four-panel figure is retained separately.",
+        ),
+        (
             "syisr_khi_density",
             "KHI electron-density evolution",
             "Two-hour Ri=0.08 model, following the mean zonal drift; no field clipping.",
@@ -468,8 +473,13 @@ fn index() -> Result<()> {
         } else {
             String::new()
         };
-        html.push_str(&format!(r#"<article><h2>{title}</h2>{snapshot}<video controls playsinline preload="metadata" poster="{name}.png" style="width:100%;height:auto"><source src="{name}.mp4" type="video/mp4"></video><p>{description}</p><div class="links"><a href="{name}.mp4">MP4</a><a href="{name}.pdf">Scientific PDF</a><a href="https://github.com/jvierine/rustplotlib/blob/main/examples/syisr_khi.rs">Rust source</a></div></article>"#));
-        md.push_str(&format!("## {title}\n\n![{title}]({name}.png)\n\n{description} [MP4]({name}.mp4) · [PDF]({name}.pdf) · [Rust source](../examples/syisr_khi.rs)\n\n"));
+        let source = if name == "tiegcm_animation" {
+            "tiegcm_animation.rs"
+        } else {
+            "syisr_khi.rs"
+        };
+        html.push_str(&format!(r#"<article><h2>{title}</h2>{snapshot}<video controls playsinline preload="metadata" poster="{name}.png" style="width:100%;height:auto"><source src="{name}.mp4" type="video/mp4"></video><p>{description}</p><div class="links"><a href="{name}.mp4">MP4</a><a href="{name}.pdf">Scientific PDF</a><a href="https://github.com/jvierine/rustplotlib/blob/main/examples/{source}">Rust source</a></div></article>"#));
+        md.push_str(&format!("## {title}\n\n![{title}]({name}.png)\n\n{description} [MP4]({name}.mp4) · [PDF]({name}.pdf) · [Rust source](../examples/{source})\n\n"));
     }
     html.push_str("</main></html>");
     fs::write("gallery/index.html", html)?;

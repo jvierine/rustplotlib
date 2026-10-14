@@ -60,6 +60,11 @@ Click a figure to open its PDF, animation, or interactive view.
 | [![TIE-GCM heating pulse](gallery/tiegcm.png)](gallery/tiegcm.pdf) | [![Damped oscillations at article-column size](gallery/single_column.png)](gallery/single_column.pdf) |
 | [PDF](gallery/tiegcm.pdf) · [Source](examples/tiegcm.rs) | [PDF](gallery/single_column.pdf) · [Source](examples/publication.rs) |
 
+[![One-panel TIE-GCM animation](gallery/tiegcm_animation.gif)](gallery/tiegcm_animation.mp4)
+
+[TIE-GCM animation MP4](gallery/tiegcm_animation.mp4) · [Rust source](examples/tiegcm_animation.rs). All 49 saved five-minute outputs; the four-panel static figure remains above.
+
+
 | KHI electron-density animation | Ion drift and background wind |
 |:--:|:--:|
 | [![KHI electron-density animation](gallery/syisr_khi_density.gif)](gallery/syisr_khi_density.mp4) | [![Ion drift and background wind](gallery/syisr_khi_ion_up.gif)](gallery/syisr_khi_ion_up.mp4) |
