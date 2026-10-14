@@ -370,7 +370,7 @@ fn main() -> Result<()> {
     fig.connectors.push(Connector {
         from_panel: 0,
         from: orbit_anchor,
-        to_panel: 2,
+        to_panel: 3,
         to: [points[0][0], 12.],
         via: vec![
             [3., 9. + (1.015 - orbit_anchor[1]) / 2.03 * 66.],
@@ -419,7 +419,7 @@ fn main() -> Result<()> {
     fig.connectors.push(Connector {
         from_panel: 1,
         from: VIEW.project([22., 70.]).unwrap(),
-        to_panel: 3,
+        to_panel: 4,
         to: [24., 78.9],
         via: vec![
             [158., 38.],
