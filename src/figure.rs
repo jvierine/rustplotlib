@@ -68,6 +68,32 @@ impl Label {
         }
     }
 }
+/// A top x axis with labels in another coordinate system.
+/// `to_primary` maps secondary tick values onto the panel's primary x scale.
+/// Tick positions are shared by every output backend; labels use LaTeX.
+#[derive(Clone, Debug)]
+pub struct SecondaryAxis {
+    pub label: String,
+    /// (primary coordinate, secondary label value).
+    pub ticks: Vec<(f64, f64)>,
+}
+impl SecondaryAxis {
+    pub fn new(
+        label: impl Into<String>,
+        values: Vec<f64>,
+        to_primary: impl Fn(f64) -> f64,
+    ) -> Result<Self> {
+        let ticks: Vec<_> = values.into_iter().map(|v| (to_primary(v), v)).collect();
+        ensure!(
+            ticks.iter().all(|(x, v)| x.is_finite() && v.is_finite()),
+            "Secondary axis transform must yield finite ticks"
+        );
+        Ok(Self {
+            label: label.into(),
+            ticks,
+        })
+    }
+}
 #[derive(Clone, Debug)]
 pub struct Axes {
     pub xlim: [f64; 2],
@@ -76,6 +102,7 @@ pub struct Axes {
     pub ylabel: String,
     pub xticks: Vec<f64>,
     pub yticks: Vec<f64>,
+    pub secondary_x: Option<SecondaryAxis>,
 }
 impl Axes {
     pub fn new(
@@ -91,6 +118,7 @@ impl Axes {
             ylabel: ylabel.into(),
             xticks: ticks(xlim, 5),
             yticks: ticks(ylim, 4),
+            secondary_x: None,
         }
     }
 }
@@ -672,6 +700,10 @@ impl Figure {
             {
                 v.extend([a.xlabel.clone(), a.ylabel.clone()]);
                 v.extend(a.xticks.iter().chain(&a.yticks).map(|x| number(*x)));
+                if let Some(top) = &a.secondary_x {
+                    v.push(top.label.clone());
+                    v.extend(top.ticks.iter().map(|(_, v)| number(*v)));
+                }
             }
             v.extend(p.labels.iter().map(|l| l.latex.clone()));
         }
@@ -812,6 +844,48 @@ impl Figure {
                         x,
                         y + 0.95 * em,
                         0.0,
+                        "#171717",
+                        &mut serial,
+                        &mut label_bounds,
+                    )?;
+                }
+                if let Some(top) = &a.secondary_x {
+                    write!(
+                        s,
+                        "<path d=\"M {} {} H {}\" stroke=\"#444\" stroke-width=\"0.18\" fill=\"none\"/>",
+                        r.x,
+                        r.y,
+                        r.x + r.width
+                    )?;
+                    for &(primary, value) in &top.ticks {
+                        if primary < a.xlim[0] || primary > a.xlim[1] {
+                            continue;
+                        }
+                        let [x, _] = p.xy([primary, a.ylim[1]]);
+                        write!(
+                            s,
+                            "<path d=\"M {x} {} v -1.2\" stroke=\"#444\" stroke-width=\"0.18\"/>",
+                            r.y
+                        )?;
+                        place(
+                            &mut s,
+                            &glyphs,
+                            &number(value),
+                            x,
+                            r.y - 0.95 * em,
+                            0.,
+                            "#171717",
+                            &mut serial,
+                            &mut label_bounds,
+                        )?;
+                    }
+                    place(
+                        &mut s,
+                        &glyphs,
+                        &top.label,
+                        r.x + r.width / 2.,
+                        r.y - 2.5 * em,
+                        0.,
                         "#171717",
                         &mut serial,
                         &mut label_bounds,
@@ -1325,6 +1399,16 @@ mod tests {
         let image = raster_mesh(&masked, &panel, &scale, 128.);
         assert_eq!(image.get_pixel(115, 64)[3], 0);
         assert_eq!(image.get_pixel(12, 64)[3], 255);
+    }
+    #[test]
+    fn secondary_axis_maps_reciprocal_period_and_rejects_singular_ticks() {
+        let axis = SecondaryAxis::new("Period", vec![4., 5., 10.], |p| {
+            std::f64::consts::TAU / (60. * p)
+        })
+        .unwrap();
+        assert!((axis.ticks[1].0 - 0.020943951023931952).abs() < 1e-14);
+        assert!(axis.ticks[0].0 > axis.ticks[2].0);
+        assert!(SecondaryAxis::new("Period", vec![0.], |p| 1. / p).is_err());
     }
     #[test]
     fn profiles_are_readable_and_golden() {

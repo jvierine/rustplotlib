@@ -120,3 +120,8 @@ cargo run --release --features hdf5-examples --example syisr_khi
 ```
 
 [Input schema and animation instructions](examples/syisr_khi.md).
+
+Secondary horizontal axes use `Axes::secondary_x` with
+`SecondaryAxis::new(label, ticks, to_primary)`. The inverse coordinate mapping
+positions ticks on the primary scale, including nonlinear reciprocal mappings.
+See [the secondary-axis example](examples/secondary_axis.rs).

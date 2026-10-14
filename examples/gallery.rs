@@ -336,6 +336,13 @@ fn index() -> Result<()> {
     }
     for (name, title, description, url, source) in [
         (
+            "secondary_axis",
+            "Reciprocal secondary axis",
+            "An analytic buoyancy profile with height vertically and period on the top axis; not an MSIS atmosphere.",
+            "secondary_axis.pdf",
+            "examples/secondary_axis.rs",
+        ),
+        (
             "khi_summary",
             "Small multiples and diagnostics",
             "KHI evolution with directly labelled energy and enstrophy.",

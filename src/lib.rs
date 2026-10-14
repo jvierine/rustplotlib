@@ -9,6 +9,7 @@ pub mod volume;
 pub use color::{ColorMap, Normalization, Scale};
 pub use figure::{
     Axes, Colorbar, Contour, Field, Figure, IntendedUse, Label, Layer, Line, Panel, QuadMesh, Rect,
+    SecondaryAxis,
 };
 pub use latex::Latex;
 
