@@ -320,9 +320,9 @@ fn main() -> Result<()> {
     fig.colorbars.push(cb);
 
     fig.labels
-        .push(Label::new(r"\textbf{a\quad SMILE + GNSS}", 41., 4.));
+        .push(Label::new(r"\textbf{a)\quad SMILE UVI precipitation and GNSS TEC LSTIDs}", 41., 4.));
     fig.labels
-        .push(Label::new(r"\textbf{b\quad MAGE}", 125., 4.));
+        .push(Label::new(r"\textbf{b)\quad MAGE Joule heating and LSTADs}", 125., 4.));
     let mut e = Label::new("EISCAT3D", 146., 34.);
     e.color = TEAL.into();
     fig.labels.push(e);
@@ -382,7 +382,7 @@ fn main() -> Result<()> {
         width_pt: 0.6,
     });
     fig.labels.push(Label::new(
-        r"\textbf{c\quad AISSat-1 orbital decay}",
+        r"\textbf{c)\quad AISSat-1 orbital decay}",
         46.5,
         94.5,
     ));
@@ -406,7 +406,7 @@ fn main() -> Result<()> {
     ));
     fig.panels.push(radar);
     fig.labels.push(Label::new(
-        r"\textbf{d\quad EISCAT VHF heating}",
+        r"\textbf{d)\quad EISCAT VHF heating}",
         125.5,
         94.5,
     ));
