@@ -118,6 +118,33 @@ numeric tick. These label calendar times without changing the plotted coordinate
 `Connector` links data positions in two panels through optional `via` waypoints
 in figure millimetres from the top left. Add it to `Figure::connectors`.
 
+## Legends
+
+`Panel::legend` accepts a compact, frameless `Legend` with LaTeX labels and
+vector line or filled-circle samples. The same placement is used in PDF,
+SVG and raster exports.
+
+```rust
+let mut legend = Legend::new(vec![
+    LegendEntry::line("Expected trajectory", "#003c9e"),
+    LegendEntry::circle("Radar terminus", "#007a52"),
+]);
+legend.position = LegendPosition::UpperLeft;
+legend.avoid_layers = vec![1, 3]; // protect observations and model, not clouds
+panel.legend = Some(legend);
+```
+
+`avoid_data` defaults to true. `position` specifies the preferred corner; if
+occupied, other corners and then interior positions are searched. An empty
+`avoid_layers` list protects all non-image layers. Set explicit layer indices
+to allow contextual images, coastlines or other background layers to be covered.
+Protection uses finite, visible data coverage (including polygon footprints
+and line widths), not just data-point centres, at a quarter-millimetre occupancy
+resolution with an additional half-millimetre clearance. Missing/masked cells
+remain available for placement. Export fails if the legend cannot fit without
+covering protected data. `avoid_data = false` explicitly fixes the requested
+corner. `padding_mm` and `background_opacity` control the restrained white backing.
+
 `ColorMap::seismic()` and `inferno()` provide the standard 256-entry tables.
 Listed colour bars use lookup-table image strips rather than large PDF stitching
 functions, preserving their discrete colours and avoiding PDF-reader limits.

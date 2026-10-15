@@ -5,6 +5,7 @@
 pub mod color;
 pub mod figure;
 pub mod latex;
+pub mod legend;
 pub mod volume;
 pub use color::{ColorMap, Normalization, Scale};
 pub use figure::{
@@ -12,6 +13,7 @@ pub use figure::{
     PolygonMesh, QuadMesh, Rect, SecondaryAxis,
 };
 pub use latex::Latex;
+pub use legend::{Legend, LegendEntry, LegendPosition, LegendSymbol};
 mod palettes;
 
 pub mod cartography;

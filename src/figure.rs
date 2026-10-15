@@ -417,6 +417,7 @@ pub struct Panel {
     pub axes_visible: bool,
     pub layers: Vec<Layer>,
     pub labels: Vec<Label>,
+    pub legend: Option<crate::Legend>,
 }
 impl Panel {
     pub fn pcolormesh(
@@ -464,6 +465,7 @@ impl Panel {
             axes_visible: true,
             layers: vec![],
             labels: vec![],
+            legend: None,
         }
     }
     pub fn push(&mut self, layer: Layer) -> &mut Self {
@@ -731,6 +733,9 @@ impl Figure {
         }
         for p in &self.panels {
             ensure!(p.rect.valid(), "Invalid panel rectangle");
+            if let Some(legend) = &p.legend {
+                legend.validate(p)?;
+            }
             if let Some(a) = &p.axes {
                 for (ticks, labels) in [(&a.xticks, &a.xticklabels), (&a.yticks, &a.yticklabels)] {
                     ensure!(ticks.iter().all(|v| v.is_finite()), "Non-finite axis tick");
@@ -864,6 +869,9 @@ impl Figure {
                 }
             }
             v.extend(p.labels.iter().map(|l| l.latex.clone()));
+            if let Some(legend) = &p.legend {
+                v.extend(legend.entries.iter().map(|entry| entry.label.clone()));
+            }
         }
         for b in &self.colorbars {
             v.push(b.label.clone());
@@ -872,6 +880,214 @@ impl Figure {
         v.extend(self.labels.iter().map(|l| l.latex.clone()));
         v.retain(|s| !s.is_empty());
         v
+    }
+    fn render_legend(
+        &self,
+        svg: &mut String,
+        panel: &Panel,
+        legend: &crate::Legend,
+        glyphs: &BTreeMap<String, Glyph>,
+        serial: &mut usize,
+        bounds: &mut Vec<(String, [f64; 4])>,
+    ) -> Result<()> {
+        let row_height = legend
+            .entries
+            .iter()
+            .map(|e| {
+                let symbol_height = match e.symbol {
+                    crate::LegendSymbol::Line { width_pt, .. } => width_pt,
+                    crate::LegendSymbol::Circle { radius_pt, .. } => 2. * radius_pt,
+                };
+                glyphs[&e.label].height_pt.max(symbol_height) * MM_PER_PT + 1.5
+            })
+            .fold(self.font_pt * MM_PER_PT * 1.35, f64::max);
+        let text_width = legend
+            .entries
+            .iter()
+            .map(|e| glyphs[&e.label].width_pt * MM_PER_PT)
+            .fold(0., f64::max);
+        let symbol_width = legend
+            .entries
+            .iter()
+            .map(|entry| match entry.symbol {
+                crate::LegendSymbol::Circle { radius_pt, .. } => 2. * radius_pt * MM_PER_PT + 0.25,
+                crate::LegendSymbol::Line { .. } => 7.,
+            })
+            .fold(7., f64::max);
+        let text_offset = symbol_width + 3.;
+        let width = 2. * legend.padding_mm + text_offset + text_width;
+        let height = 2. * legend.padding_mm + row_height * legend.entries.len() as f64;
+        let mask = if legend.avoid_data {
+            self.legend_occupancy(panel, legend)?
+        } else {
+            vec![]
+        };
+        let w = (panel.rect.width * 4.).ceil() as usize;
+        let h = (panel.rect.height * 4.).ceil() as usize;
+        // An integral image makes the placement search independent of data size.
+        let mut summed = vec![0usize; (w + 1) * (h + 1)];
+        if !mask.is_empty() {
+            for y in 0..h {
+                let mut row = 0;
+                for x in 0..w {
+                    row += usize::from(mask[y * w + x]);
+                    summed[(y + 1) * (w + 1) + x + 1] = summed[y * (w + 1) + x + 1] + row;
+                }
+            }
+        }
+        let occupied = |r: Rect| {
+            // A half-millimetre clearance also protects antialiased edges.
+            let ix = |v: f64| ((v - panel.rect.x) * 4.).floor().clamp(0., w as f64) as usize;
+            let iy = |v: f64| ((v - panel.rect.y) * 4.).floor().clamp(0., h as f64) as usize;
+            let (x0, x1, y0, y1) = (
+                ix(r.x - 0.5),
+                ix(r.x + r.width + 0.75),
+                iy(r.y - 0.5),
+                iy(r.y + r.height + 0.75),
+            );
+            summed[y1 * (w + 1) + x1] + summed[y0 * (w + 1) + x0]
+                > summed[y0 * (w + 1) + x1] + summed[y1 * (w + 1) + x0]
+        };
+        let r = legend.place(panel.rect, width, height, &occupied)?;
+        write!(
+            svg,
+            "<g data-role=\"legend\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"0.8\" fill=\"white\" fill-opacity=\"{}\"/>",
+            r.x, r.y, r.width, r.height, legend.background_opacity
+        )?;
+        for (i, entry) in legend.entries.iter().enumerate() {
+            let x = r.x + legend.padding_mm;
+            let y = r.y + legend.padding_mm + (i as f64 + 0.5) * row_height;
+            match &entry.symbol {
+                crate::LegendSymbol::Line {
+                    color,
+                    width_pt,
+                    dash,
+                } => {
+                    write!(
+                        svg,
+                        "<path d=\"M {x} {y} h {symbol_width}\" stroke=\"{color}\" stroke-width=\"{}\" {} fill=\"none\"/>",
+                        width_pt * MM_PER_PT,
+                        dash.as_ref()
+                            .map(|d| format!("stroke-dasharray=\"{d}\""))
+                            .unwrap_or_default()
+                    )?;
+                }
+                crate::LegendSymbol::Circle { color, radius_pt } => {
+                    write!(
+                        svg,
+                        "<circle cx=\"{}\" cy=\"{y}\" r=\"{}\" fill=\"{color}\" stroke=\"white\" stroke-width=\"0.25\"/>",
+                        x + symbol_width / 2.,
+                        radius_pt * MM_PER_PT
+                    )?;
+                }
+            }
+            place(
+                svg,
+                glyphs,
+                &entry.label,
+                x + text_offset + glyphs[&entry.label].width_pt * MM_PER_PT / 2.,
+                y,
+                0.,
+                "#171717",
+                serial,
+                bounds,
+            )?;
+        }
+        svg.push_str("</g>");
+        Ok(())
+    }
+
+    fn legend_occupancy(&self, panel: &Panel, legend: &crate::Legend) -> Result<Vec<bool>> {
+        let w = (panel.rect.width * 4.).ceil() as u32;
+        let h = (panel.rect.height * 4.).ceil() as u32;
+        let mut mask = vec![false; (w * h) as usize];
+        let protect_line = |mask: &mut Vec<bool>, points: &[[f64; 2]], width_pt: f64| {
+            for pair in points.windows(2) {
+                if !pair.iter().flatten().all(|v| v.is_finite()) {
+                    continue;
+                }
+                let [a, b] = [panel.xy(pair[0]), panel.xy(pair[1])];
+                let steps = ((b[0] - a[0]).hypot(b[1] - a[1]) * 8.).ceil().max(1.) as usize;
+                let radius = (width_pt * MM_PER_PT * 2.).ceil().max(1.) as i32;
+                for i in 0..=steps {
+                    let t = i as f64 / steps as f64;
+                    let x = ((a[0] + t * (b[0] - a[0]) - panel.rect.x) * 4.).round() as i32;
+                    let y = ((a[1] + t * (b[1] - a[1]) - panel.rect.y) * 4.).round() as i32;
+                    for yy in (y - radius).max(0)..=(y + radius).min(h as i32 - 1) {
+                        for xx in (x - radius).max(0)..=(x + radius).min(w as i32 - 1) {
+                            mask[yy as usize * w as usize + xx as usize] = true;
+                        }
+                    }
+                }
+            }
+        };
+        for (i, layer) in panel.layers.iter().enumerate() {
+            let protected = if legend.avoid_layers.is_empty() {
+                !matches!(layer, Layer::Image(_))
+            } else {
+                legend.avoid_layers.contains(&i)
+            };
+            if !protected {
+                continue;
+            }
+            let raster = match layer {
+                Layer::Line(line) => {
+                    protect_line(&mut mask, &line.points, line.width_pt);
+                    continue;
+                }
+                Layer::PolygonMesh(mesh) => {
+                    raster_polygons(mesh, panel, &self.scales[mesh.scale], 101.6)
+                }
+                Layer::QuadMesh(mesh) => raster_mesh(mesh, panel, &self.scales[mesh.scale], 101.6),
+                Layer::Surface(surface) => surface.raster(w, h, &self.scales[surface.scale]),
+                Layer::Image(img) => {
+                    image::imageops::resize(img, w, h, image::imageops::FilterType::Nearest)
+                }
+                Layer::Pcolormesh(_) | Layer::Contour(_) => {
+                    if let Layer::Contour(c) = layer
+                        && !c.filled
+                    {
+                        for level in &c.levels {
+                            for segment in c.segments(*level) {
+                                protect_line(&mut mask, &segment, c.width_pt);
+                            }
+                        }
+                        continue;
+                    }
+                    let mut img = image::RgbaImage::new(w, h);
+                    let (xx, yy) = panel.limits();
+                    for y in 0..h {
+                        for x in 0..w {
+                            let px = xx[0] + (x as f64 + 0.5) / w as f64 * (xx[1] - xx[0]);
+                            let py = yy[1] - (y as f64 + 0.5) / h as f64 * (yy[1] - yy[0]);
+                            let visible = match layer {
+                                Layer::Pcolormesh(f) => {
+                                    self.scales[f.scale].map(f.sample(px, py)).is_some()
+                                }
+                                Layer::Contour(c) => {
+                                    let v = c.sample(px, py);
+                                    v.is_finite()
+                                        && v >= c.levels[0]
+                                        && v <= *c.levels.last().unwrap()
+                                        && self.scales[c.scale].map(v).is_some()
+                                }
+                                _ => unreachable!(),
+                            };
+                            if visible {
+                                img.put_pixel(x, y, image::Rgba([0, 0, 0, 255]));
+                            }
+                        }
+                    }
+                    img
+                }
+            };
+            for (i, pixel) in raster.pixels().enumerate() {
+                if pixel[3] > 0 {
+                    mask[i] = true;
+                }
+            }
+        }
+        Ok(mask)
     }
     /// LaTeX glyph paths and geometry remain vector; dense fields are images.
     pub fn svg(&self) -> Result<String> {
@@ -978,6 +1194,9 @@ impl Figure {
                 }
             }
             s.push_str("</g>");
+            if let Some(legend) = &p.legend {
+                self.render_legend(&mut s, p, legend, &glyphs, &mut serial, &mut label_bounds)?;
+            }
             if let Some(a) = &p.axes
                 && p.axes_visible
             {
@@ -1648,5 +1867,48 @@ mod tests {
         assert!((f.width_mm / f.height_mm - PHI).abs() < 1e-12);
         assert!(Figure::new(IntendedUse::Mobile).font_pt >= 12.0);
         assert_eq!(ticks([0.0, 10.0], 5), vec![0.0, 2.0, 4.0, 6.0, 8.0, 10.0]);
+    }
+    #[test]
+    fn legend_protects_visible_cells_but_can_cover_background() {
+        use crate::{Legend, LegendEntry};
+        let mut f = Figure::new(IntendedUse::ArticleWide);
+        f.scale(Scale::new([0., 1.], Normalization::Linear, ColorMap::diverging()).unwrap());
+        let mut p = Panel::new(
+            Rect::new(10., 20., 40., 40.),
+            Axes::new([0., 1.], [0., 1.], "", ""),
+        );
+        p.push(Layer::Image(image::RgbaImage::from_pixel(
+            2,
+            2,
+            image::Rgba([100, 100, 100, 255]),
+        )));
+        p.push(Layer::PolygonMesh(
+            PolygonMesh::new(
+                vec![
+                    vec![[0., 0.], [0.5, 0.], [0.5, 1.], [0., 1.]],
+                    vec![[0.5, 0.], [1., 0.], [1., 1.], [0.5, 1.]],
+                ],
+                vec![0.5, f64::NAN],
+                0,
+            )
+            .unwrap(),
+        ));
+        let mut legend = Legend::new(vec![LegendEntry::circle("Data", "green")]);
+        legend.avoid_layers = vec![1];
+        let mask = f.legend_occupancy(&p, &legend).unwrap();
+        assert!(mask[80 * 160 + 40]);
+        assert!(
+            !mask[80 * 160 + 120],
+            "Masked data must not protect the cloud background"
+        );
+        legend.avoid_layers = vec![0];
+        assert!(f.legend_occupancy(&p, &legend).unwrap().iter().all(|p| *p));
+        legend.avoid_layers = vec![99];
+        assert!(legend.validate(&p).is_err());
+        legend.avoid_layers = vec![1];
+        p.legend = Some(legend);
+        f.panels.push(p);
+        assert!(f.validate().is_ok());
+        assert!(f.all_labels().contains(&"Data".into()));
     }
 }
