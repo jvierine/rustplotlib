@@ -507,6 +507,8 @@ impl Colorbar {
 }
 #[derive(Clone, Debug)]
 pub struct Figure {
+    pub(crate) article_contract: Option<crate::article::ArticleContract>,
+    pub(crate) web_contract: Option<crate::web_layout::WebContract>,
     pub width_mm: f64,
     pub height_mm: f64,
     pub font_pt: f64,
@@ -665,6 +667,8 @@ impl Figure {
     pub fn new(use_case: IntendedUse) -> Self {
         let (w, font) = use_case.dimensions();
         Self {
+            article_contract: None,
+            web_contract: None,
             width_mm: w,
             height_mm: w / PHI,
             font_pt: font,
@@ -722,6 +726,12 @@ impl Figure {
         Ok(ids)
     }
     fn validate(&self) -> Result<()> {
+        if let Some(contract) = self.article_contract {
+            contract.validate(self)?;
+        }
+        if let Some(contract) = self.web_contract {
+            contract.validate(self)?;
+        }
         ensure!(
             [self.width_mm, self.height_mm, self.font_pt, self.raster_dpi]
                 .iter()

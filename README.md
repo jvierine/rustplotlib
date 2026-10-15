@@ -8,7 +8,7 @@ figures and interactive Rust/WASM + WebGL web pages.
 
 The design priorities are:
 
-- **Scientific publications:** readable text at the intended paper size, restrained layouts, aligned panels, clear colour bars, and tight exports.
+- **Scientific publications:** body-sized text at the final article width, checked LaTeX inclusion, restrained layouts, aligned panels, and clear colour bars.
 - **LaTeX mathematics:** labels, ticks, symbols, and equations use genuine LaTeX; PDF preserves vector text and curves.
 - **Interactive web plots:** Rust/WASM + WebGL views with camera controls, changing data, and animation playback.
 - **Animation and extensibility:** render evolving simulations, export movies, and add plotting features without sacrificing scientific clarity.
@@ -21,14 +21,34 @@ paths; feature coverage differs between the native and browser APIs.
 ```rust
 use rustplotlib::*;
 
-let mut figure = Figure::new(IntendedUse::ArticleColumn);
+// The manuscript's linewidth (mm) and normal body font (TeX pt).
+let article = ArticleLayout::new(85.0, 10.0)?;
+let mut figure = article.figure(1.0, 65.0)?;
 let panels = figure.grid(1, 1)?;
 figure.panels[panels[0]].axes = Some(Axes::new(
     [0., 10.], [-1., 1.], r"$t\,[\mathrm{s}]$", r"$p'/p_0$",
 ));
 figure.panels[panels[0]].push(Layer::Line(Line::new(points, "#245774")));
-figure.save("figure.pdf")?;
+figure.save_for_article("figure.pdf", "figures/figure.pdf")?;
 ```
+
+**Design at the size readers will see.** `article.figure(0.5, height_mm)` halves
+the canvas width, not the font. Lay out panels for that smaller canvas. The PDF
+and generated `figure.include.tex` bind the final physical width to the article
+body size. The inclusion checks the manuscript's `\linewidth` and normal font;
+changed manuscript settings require regeneration instead of silently shrinking
+labels. Paste the snippet into the figure environment (or input it) without
+`\resizebox`, `\scalebox`, or another scaling wrapper. These external transforms
+cannot be detected by the Rust library. Fixed article exports deliberately
+reject tight cropping, width overrides and font overrides. Generic `IntendedUse`
+presets remain available for unbound plots and non-publication output.
+
+For web pages, use `WebLayout::new(container_css_px, body_font_css_px)` and
+`save_for_web`. The generated SVG embed uses text-relative `em` sizing, so its
+labels follow the surrounding CSS font. A narrow container scrolls instead of
+silently shrinking the plot. For responsive designs, render separate layouts
+at the target widths; the [web typography example](examples/web_typography.rs)
+demonstrates desktop/mobile selection while retaining the same label size.
 
 ## Scientific examples
 

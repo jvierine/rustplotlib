@@ -149,6 +149,54 @@ corner. `padding_mm` and `background_opacity` control the restrained white backi
 Listed colour bars use lookup-table image strips rather than large PDF stitching
 functions, preserving their discrete colours and avoiding PDF-reader limits.
 
+## Article Typography Contract
+
+Prefer `ArticleLayout::new(linewidth_mm, body_font_pt)?.figure(width_fraction,
+height_mm)?` for publication plots. Use the linewidth of the actual figure
+environment, not the paper width: a column figure and a two-column figure have
+different available widths. Obtain it from LaTeX with `\the\linewidth`; convert
+TeX points to mm using `25.4 / 72.27`. Font sizes are TeX points, not PDF points.
+
+The resulting figure uses the final physical width and body-sized text. Width
+fractions change available plotting area, not typography. `grid` can determine
+height, while widths and fonts remain bound. Exports reject mutations that break
+the contract, including tight cropping. Lay out smaller figures anew; do not
+scale all coordinates and text from a larger figure.
+
+`save_for_article("map.pdf", "figures/map.pdf")` exports a PDF and a
+`map.include.tex` companion. `latex_include("figures/map.pdf")` returns the same
+snippet. It includes at the configured physical width and checks the article's
+normal font and current linewidth at LaTeX compile time (tolerances 0.01 pt and
+0.1 mm). It requires graphicx. Do not wrap the inclusion in an external scaling
+transform: rustplotlib cannot police arbitrary downstream LaTeX transforms.
+
+The article contract checks the global label size. Explicit size commands inside
+user-supplied LaTeX labels, raster image text, and externally scaled containers
+remain the author's responsibility. Old `Figure::new(IntendedUse::...)` APIs
+remain unbound for compatibility; they do not imply a checked article layout.
+
+## Web Typography Contract
+
+`WebLayout::new(container_css_px, body_font_css_px)?.figure(height_css_px)?`
+specifies dimensions in CSS pixels, independent of device pixel ratio. It
+converts the CSS font into TeX points for the label renderer (72.27 pt per inch,
+96 CSS px per inch). Font and width overrides and tight cropping are rejected.
+
+`save_for_web("plot.svg", "assets/plot.svg", "Accessible plot description")`
+exports SVG plus `plot.embed.html`. `html_embed(url, alt)` returns the embed.
+The image width is relative to the inherited CSS text size in em: increasing
+page text size increases plot text too. The keyboard-scrollable wrapper handles
+narrow containers without reducing labels. Do not override the generated image
+width or apply CSS transforms, `zoom`, or `max-width:100%` to it. The wrapper
+may have max-width:100%; the plot image deliberately does not.
+
+For responsive reflow, render a variant at each target container width with the
+same body font size and recompute its panels using `grid` or your layout. Select
+variants using container/media queries. This API does not automatically reflow
+an already-rendered SVG. The `web_typography` example demonstrates two layouts.
+Explicit label font commands and text baked into images remain outside the
+contract, as with article plots.
+
 ## Physical-Size Markers
 
 `Panel::markers(&mut figure, &points, &MarkerStyle)` adds vector symbols at

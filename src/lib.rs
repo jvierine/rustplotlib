@@ -3,6 +3,10 @@
 //! Panels are positioned in millimetres. Layers, axes and colorbars are
 //! independent objects; no particular plot layout or theme is mandatory.
 pub mod color;
+pub mod article;
+pub use article::ArticleLayout;
+pub mod web_layout;
+pub use web_layout::WebLayout;
 pub mod figure;
 pub mod latex;
 pub mod legend;
