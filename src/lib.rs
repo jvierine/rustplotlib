@@ -6,6 +6,8 @@ pub mod color;
 pub mod figure;
 pub mod latex;
 pub mod legend;
+pub mod markers;
+pub use markers::{MarkerShape, MarkerStyle};
 pub mod volume;
 pub use color::{ColorMap, Normalization, Scale};
 pub use figure::{

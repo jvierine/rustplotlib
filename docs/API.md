@@ -148,3 +148,14 @@ corner. `padding_mm` and `background_opacity` control the restrained white backi
 `ColorMap::seismic()` and `inferno()` provide the standard 256-entry tables.
 Listed colour bars use lookup-table image strips rather than large PDF stitching
 functions, preserving their discrete colours and avoiding PDF-reader limits.
+
+## Physical-Size Markers
+
+`Panel::markers(&mut figure, &points, &MarkerStyle)` adds vector symbols at
+data coordinates. `MarkerStyle` specifies `shape`, `size_pt` (full diameter or
+cap length), and an RGB `color` in 0--1. Supported shapes are `Circle`, `Square`,
+`Diamond`, `Triangle`, `HorizontalCap`, and `VerticalCap`. Sizes stay fixed in
+physical points across unequal axis ranges and panel aspect ratios. Nonfinite
+positions are skipped; invalid sizes and colors return errors. Error-bar stems
+can use `Line` with the cap shapes at their endpoints. Symbols are ordinary
+layers and participate in legend data avoidance.
