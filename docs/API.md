@@ -199,6 +199,21 @@ contract, as with article plots.
 
 ## Physical-Size Markers
 
+For line ensembles, `Line::opacity` (default 1) controls per-curve transparency.
+Use thin strokes and low opacity to keep contextual trajectories subordinate
+to the primary measurement distribution; overlapping curves accumulate density.
+Opacity must lie in 0--1. Invisible curves do not block legend placement.
+
+`Legend::columns` (default 1) creates a compact key with entries filled across
+each row. Columns are sized to their own labels, with consistent symbol spacing.
+Data avoidance uses the complete multi-column footprint.
+
+`panel.rasterize_lines(start..end, dpi)?` replaces a dense contiguous line
+ensemble by one transparent raster layer, preserving curve overlap and clipping.
+Other layers remain vector. Use this after panel sizing for publication PDFs
+that would otherwise contain thousands of vector paths. Indices after the
+replaced group shift; set explicit legend protection indices afterwards.
+
 `Panel::markers(&mut figure, &points, &MarkerStyle)` adds vector symbols at
 data coordinates. `MarkerStyle` specifies `shape`, `size_pt` (full diameter or
 cap length), and an RGB `color` in 0--1. Supported shapes are `Circle`, `Square`,

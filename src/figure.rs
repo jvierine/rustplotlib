@@ -133,6 +133,8 @@ pub struct Line {
     pub color: String,
     pub width_pt: f64,
     pub dash: Option<String>,
+    /// Per-curve opacity. Overlapping ensemble members accumulate naturally.
+    pub opacity: f64,
 }
 impl Line {
     pub fn new(points: Vec<[f64; 2]>, color: impl Into<String>) -> Self {
@@ -141,8 +143,29 @@ impl Line {
             color: color.into(),
             width_pt: 1.1,
             dash: None,
+            opacity: 1.,
         }
     }
+}
+
+fn write_line(svg: &mut String, panel: &Panel, line: &Line) -> Result<()> {
+    let mut path = String::new();
+    let mut prior = false;
+    for point in &line.points {
+        if !point.iter().all(|v| v.is_finite()) {
+            prior = false;
+            continue;
+        }
+        let [x, y] = panel.xy(*point);
+        write!(path, "{} {:.6} {:.6} ", if prior { "L" } else { "M" }, x, y)?;
+        prior = true;
+    }
+    write!(svg,
+        "<path d=\"{path}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" stroke-opacity=\"{}\" {} stroke-linejoin=\"round\"/>",
+        line.color, line.width_pt * MM_PER_PT, line.opacity,
+        line.dash.as_ref().map(|d| format!("stroke-dasharray=\"{d}\"")).unwrap_or_default()
+    )?;
+    Ok(())
 }
 /// Rectilinear cell data. `values[j * nx + i]`; y increases upwards.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -420,6 +443,36 @@ pub struct Panel {
     pub legend: Option<crate::Legend>,
 }
 impl Panel {
+    /// Replace a contiguous group of line layers by one transparent image.
+    /// Useful for dense ensembles in small PDFs; other layers remain vector.
+    /// Layer indices after the replaced group shift. Call after panel sizing.
+    #[cfg(feature = "export")]
+    pub fn rasterize_lines(&mut self, range: std::ops::Range<usize>, dpi: f64) -> Result<()> {
+        ensure!(range.start < range.end && range.end <= self.layers.len(), "Invalid line layer range");
+        ensure!(dpi.is_finite() && dpi > 0. && self.rect.valid(), "Invalid rasterization dimensions");
+        let (xx, yy) = self.limits();
+        ensure!(xx.iter().chain(&yy).all(|v| v.is_finite()) && xx[0] < xx[1] && yy[0] < yy[1], "Invalid rasterization axes");
+        let w = (self.rect.width * dpi / 25.4).ceil() as u32;
+        let h = (self.rect.height * dpi / 25.4).ceil() as u32;
+        let mut svg = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"{} {} {} {}\">", self.rect.x, self.rect.y, self.rect.width, self.rect.height);
+        for layer in &self.layers[range.clone()] {
+            let Layer::Line(line) = layer else { anyhow::bail!("rasterize_lines requires only line layers"); };
+            ensure!(line.opacity.is_finite() && (0. ..=1.).contains(&line.opacity) && line.width_pt.is_finite() && line.width_pt >= 0., "Invalid rasterized line style");
+            write_line(&mut svg, self, line)?;
+        }
+        svg.push_str("</svg>");
+        let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default())?;
+        let mut pix = resvg::tiny_skia::Pixmap::new(w, h).context("Invalid raster dimensions")?;
+        resvg::render(&tree, resvg::tiny_skia::Transform::identity(), &mut pix.as_mut());
+        // tiny-skia stores premultiplied channels; PNG expects straight RGBA.
+        let rgba: Vec<u8> = pix.pixels().iter().flat_map(|p| {
+            let p = p.demultiply();
+            [p.red(), p.green(), p.blue(), p.alpha()]
+        }).collect();
+        let image = image::RgbaImage::from_raw(w, h, rgba).context("Invalid raster image")?;
+        self.layers.splice(range, [Layer::Image(image)]);
+        Ok(())
+    }
     pub fn pcolormesh(
         &mut self,
         x_edges: Vec<f64>,
@@ -774,6 +827,7 @@ impl Figure {
                         continue;
                     }
                     Layer::Line(f) => {
+                        ensure!(f.opacity.is_finite() && (0.0..=1.0).contains(&f.opacity), "Invalid line opacity");
                         ensure!(
                             f.width_pt.is_finite() && f.width_pt >= 0.0,
                             "Invalid line width"
@@ -911,11 +965,11 @@ impl Figure {
                 glyphs[&e.label].height_pt.max(symbol_height) * MM_PER_PT + 1.5
             })
             .fold(self.font_pt * MM_PER_PT * 1.35, f64::max);
-        let text_width = legend
-            .entries
-            .iter()
-            .map(|e| glyphs[&e.label].width_pt * MM_PER_PT)
-            .fold(0., f64::max);
+        let mut text_widths = vec![0.0_f64; legend.columns];
+        for (i, entry) in legend.entries.iter().enumerate() {
+            text_widths[i % legend.columns] = text_widths[i % legend.columns]
+                .max(glyphs[&entry.label].width_pt * MM_PER_PT);
+        }
         let symbol_width = legend
             .entries
             .iter()
@@ -925,8 +979,15 @@ impl Figure {
             })
             .fold(7., f64::max);
         let text_offset = symbol_width + 3.;
-        let width = 2. * legend.padding_mm + text_offset + text_width;
-        let height = 2. * legend.padding_mm + row_height * legend.entries.len() as f64;
+        let column_gap = 4.;
+        let mut offsets = vec![0.];
+        for width in text_widths.iter().take(legend.columns - 1) {
+            offsets.push(offsets.last().unwrap() + text_offset + width + column_gap);
+        }
+        let width = 2. * legend.padding_mm + text_offset * legend.columns as f64
+            + text_widths.iter().sum::<f64>() + column_gap * (legend.columns - 1) as f64;
+        let rows = legend.entries.len().div_ceil(legend.columns);
+        let height = 2. * legend.padding_mm + row_height * rows as f64;
         let mask = if legend.avoid_data {
             self.legend_occupancy(panel, legend)?
         } else {
@@ -965,8 +1026,8 @@ impl Figure {
             r.x, r.y, r.width, r.height, legend.background_opacity
         )?;
         for (i, entry) in legend.entries.iter().enumerate() {
-            let x = r.x + legend.padding_mm;
-            let y = r.y + legend.padding_mm + (i as f64 + 0.5) * row_height;
+            let x = r.x + legend.padding_mm + offsets[i % legend.columns];
+            let y = r.y + legend.padding_mm + ((i / legend.columns) as f64 + 0.5) * row_height;
             match &entry.symbol {
                 crate::LegendSymbol::Line {
                     color,
@@ -1042,7 +1103,9 @@ impl Figure {
             }
             let raster = match layer {
                 Layer::Line(line) => {
-                    protect_line(&mut mask, &line.points, line.width_pt);
+                    if line.opacity > 0. {
+                        protect_line(&mut mask, &line.points, line.width_pt);
+                    }
                     continue;
                 }
                 Layer::PolygonMesh(mesh) => {
@@ -1122,27 +1185,7 @@ impl Figure {
             for layer in &p.layers {
                 match layer {
                     Layer::Line(line) => {
-                        let mut path = String::new();
-                        let mut prior = false;
-                        for point in &line.points {
-                            if !point.iter().all(|v| v.is_finite()) {
-                                prior = false;
-                                continue;
-                            }
-                            let [x, y] = p.xy(*point);
-                            write!(path, "{} {:.6} {:.6} ", if prior { "L" } else { "M" }, x, y)?;
-                            prior = true;
-                        }
-                        write!(
-                            s,
-                            "<path d=\"{path}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" {} stroke-linejoin=\"round\"/>",
-                            line.color,
-                            line.width_pt * MM_PER_PT,
-                            line.dash
-                                .as_ref()
-                                .map(|d| format!("stroke-dasharray=\"{d}\""))
-                                .unwrap_or_default()
-                        )?;
+                        write_line(&mut s, p, line)?;
                     }
                     Layer::Image(img) => self.embed_image(&mut s, p.rect, img.clone())?,
                     Layer::Pcolormesh(field) => self.image(&mut s, p, |x, y| {
@@ -1766,7 +1809,7 @@ pub fn number(x: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ColorMap, Normalization};
+    use crate::{ColorMap, Normalization, Legend, LegendEntry};
     #[test]
     fn polygon_cells_preserve_coverage_masks_and_winding() {
         let polygons = vec![
@@ -1920,5 +1963,64 @@ mod tests {
         f.panels.push(p);
         assert!(f.validate().is_ok());
         assert!(f.all_labels().contains(&"Data".into()));
+    }
+
+    #[test]
+    fn line_opacity_validates_exports_and_respects_invisible_data() {
+        let mut f = Figure::new(IntendedUse::ArticleWide);
+        let mut p = Panel::new(Rect::new(10., 10., 40., 40.), Axes::new([0., 1.], [0., 1.], "", ""));
+        p.axes_visible = false;
+        let mut l = Line::new(vec![[0., 0.], [1., 1.]], "#333333");
+        l.opacity = 0.2;
+        p.push(Layer::Line(l));
+        f.panels.push(p);
+        assert!(f.svg().unwrap().contains("stroke-opacity=\"0.2\""));
+        let legend = Legend::new(vec![LegendEntry::line("Ensemble", "#333333")]);
+        if let Layer::Line(l) = &mut f.panels[0].layers[0] { l.opacity = 0.; }
+        assert!(f.legend_occupancy(&f.panels[0], &legend).unwrap().iter().all(|x| !x));
+        if let Layer::Line(l) = &mut f.panels[0].layers[0] { l.opacity = 1.1; }
+        assert!(f.validate().is_err());
+    }
+
+    #[test]
+    fn compact_legend_fills_rows_and_keeps_labels_apart() {
+        let f = Figure::new(IntendedUse::ArticleWide);
+        let p = Panel::new(Rect::new(10., 10., 100., 70.), Axes::new([0., 1.], [0., 1.], "", ""));
+        let mut legend = Legend::new(vec![LegendEntry::line("A", "red"), LegendEntry::line("B", "blue"), LegendEntry::line("C", "green")]);
+        legend.columns = 2;
+        legend.avoid_data = false;
+        let glyphs = ["A", "B", "C"].into_iter().map(|s| (s.to_string(), Glyph { body: String::new(), view_box: [0., 0., 10., 5.], width_pt: 10., height_pt: 5. })).collect();
+        let mut svg = String::new();
+        let mut bounds = Vec::new();
+        f.render_legend(&mut svg, &p, &legend, &glyphs, &mut 0, &mut bounds).unwrap();
+        assert_eq!(bounds.len(), 3);
+        assert_eq!(bounds[0].1[1], bounds[1].1[1]);
+        assert!(bounds[1].1[0] > bounds[0].1[2]);
+        assert!(bounds[2].1[1] > bounds[0].1[3]);
+        assert_eq!(bounds[0].1[0], bounds[2].1[0]);
+        legend.columns = 0;
+        assert!(legend.validate(&p).is_err());
+    }
+
+    #[cfg(feature = "export")]
+    #[test]
+    fn rasterized_lines_preserve_transparency_and_layer_order() {
+        let mut p = Panel::new(Rect::new(20., 30., 25.4, 25.4), Axes::new([0., 1.], [0., 1.], "", ""));
+        let mut line = Line::new(vec![[0., 0.5], [1., 0.5]], "#808080");
+        line.opacity = 0.5;
+        line.width_pt = 4.;
+        p.push(Layer::Line(line.clone()));
+        p.push(Layer::Line(line.clone()));
+        p.push(Layer::Line(line));
+        p.rasterize_lines(0..2, 100.).unwrap();
+        assert_eq!(p.layers.len(), 2);
+        assert!(matches!(p.layers[1], Layer::Line(_)));
+        let Layer::Image(image) = &p.layers[0] else { panic!("expected rasterized ensemble"); };
+        assert_eq!(image.dimensions(), (100, 100));
+        let pixel = image.get_pixel(50, 50);
+        assert!((pixel[0] as i16 - 128).abs() <= 1, "Must unpremultiply RGB before PNG encoding");
+        assert!((pixel[3] as i16 - 192).abs() <= 1, "Overlapping curves accumulate opacity");
+        assert_eq!(image.get_pixel(0, 0)[3], 0);
+        assert!(p.rasterize_lines(0..1, 100.).is_err());
     }
 }

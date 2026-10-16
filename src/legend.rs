@@ -57,6 +57,8 @@ impl LegendEntry {
 #[derive(Clone, Debug)]
 pub struct Legend {
     pub entries: Vec<LegendEntry>,
+    /// Entries fill rows left-to-right. Column widths follow their labels.
+    pub columns: usize,
     pub position: LegendPosition,
     pub avoid_data: bool,
     pub avoid_layers: Vec<usize>,
@@ -67,6 +69,7 @@ impl Legend {
     pub fn new(entries: Vec<LegendEntry>) -> Self {
         Self {
             entries,
+            columns: 1,
             position: LegendPosition::UpperRight,
             avoid_data: true,
             avoid_layers: vec![],
@@ -77,6 +80,7 @@ impl Legend {
 
     pub(crate) fn validate(&self, panel: &Panel) -> Result<()> {
         ensure!(!self.entries.is_empty(), "Empty legend");
+        ensure!(self.columns > 0 && self.columns <= self.entries.len(), "Invalid legend column count");
         ensure!(
             self.padding_mm.is_finite() && self.padding_mm >= 0.,
             "Invalid legend padding"
