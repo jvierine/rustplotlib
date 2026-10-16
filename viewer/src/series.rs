@@ -56,7 +56,7 @@ impl SeriesView {
         self.canvas.set_height((height * dpr).round() as u32);
         let c = &self.ctx;
         c.set_transform(dpr, 0., 0., dpr, 0., 0.)?;
-        c.set_font("14px Georgia, serif");
+        c.set_font("18px RustplotlibPagella, Palatino, serif");
         c.set_fill_style_str("#314858");
         c.set_stroke_style_str("#d6dfe4");
         c.set_line_width(1.);

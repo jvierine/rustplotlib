@@ -1,3 +1,6 @@
+mod viewport;
+pub use viewport::PlotViewport;
+
 mod series;
 pub use series::SeriesView;
 // Browser GPU rendering; JavaScript only boots WASM and connects controls.
