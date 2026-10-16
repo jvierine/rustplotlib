@@ -1,4 +1,6 @@
-//! Browser GPU rendering; JavaScript only boots WASM and connects controls.
+mod series;
+pub use series::SeriesView;
+// Browser GPU rendering; JavaScript only boots WASM and connects controls.
 use wasm_bindgen::prelude::*;
 use web_sys::{
     HtmlCanvasElement, WebGl2RenderingContext as Gl, WebGlProgram, WebGlShader, WebGlTexture,
