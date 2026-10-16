@@ -208,6 +208,10 @@ Opacity must lie in 0--1. Invisible curves do not block legend placement.
 each row. Columns are sized to their own labels, with consistent symbol spacing.
 Data avoidance uses the complete multi-column footprint.
 
+`panel.label_at(latex, [x, y])` places a label in data coordinates using the
+figure's body font. Set the panel rectangle and limits first. The returned
+`Label` exposes color/rotation; ordinary `Line` layers can provide leaders.
+
 `panel.rasterize_lines(start..end, dpi)?` replaces a dense contiguous line
 ensemble by one transparent raster layer, preserving curve overlap and clipping.
 Other layers remain vector. Use this after panel sizing for publication PDFs

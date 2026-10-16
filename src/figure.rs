@@ -443,6 +443,13 @@ pub struct Panel {
     pub legend: Option<crate::Legend>,
 }
 impl Panel {
+    /// Place a body-sized LaTeX label using data coordinates. Set panel limits
+    /// and rectangle first. The returned label exposes color and rotation.
+    pub fn label_at(&mut self, latex: impl Into<String>, point: [f64; 2]) -> &mut Label {
+        let [x, y] = self.xy(point);
+        self.labels.push(Label::new(latex, x, y));
+        self.labels.last_mut().unwrap()
+    }
     /// Replace a contiguous group of line layers by one transparent image.
     /// Useful for dense ensembles in small PDFs; other layers remain vector.
     /// Layer indices after the replaced group shift. Call after panel sizing.
