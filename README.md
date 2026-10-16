@@ -96,6 +96,10 @@ The KHI cases are simulated demonstrations, not observational fits.
 `ArticleColumn`, `ArticleWide`, `Mobile`, `DesktopHalf`, or custom dimensions.
 Defaults use 10–13 pt type, consistent margins and golden-ratio panel geometry.
 Panels can also be positioned freely in millimetres. Axes are optional.
+External colorbars automatically reserve measured LaTeX axis-label space plus
+a `0.6 em` gap. Horizontal layouts grow vertically when needed. Use
+`Figure::layout_colorbars()` to obtain resolved coordinates for web overlays;
+`auto_colorbar_layout = false` opts into exact manual placement.
 
 - Rectilinear and curvilinear `pcolormesh`; `contour` and `contourf`.
 - Shared or independent colorbars; linear, log and signed-asinh scales.

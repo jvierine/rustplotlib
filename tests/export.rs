@@ -191,6 +191,7 @@ fn axis_labels_and_colorbars_cannot_overlap_unless_forced() {
     let mut bar = Colorbar::new(Rect::new(15., 79., 60., 1.5), sc, "", vec![]);
     bar.horizontal = true;
     f.colorbars.push(bar);
+    f.auto_colorbar_layout = false;
     let err = f.save(root.join("bad.png")).unwrap_err().to_string();
     assert!(err.contains("$x$") && err.contains("overlaps colorbar"));
     assert!(
@@ -211,6 +212,52 @@ fn axis_labels_and_colorbars_cannot_overlap_unless_forced() {
     ));
     let err = f.svg().unwrap_err().to_string();
     assert!(err.contains("Axis label") && err.contains("overlaps data panel"));
+}
+
+#[test]
+fn external_colorbars_reserve_measured_axis_label_space_by_default() {
+    for font in [10., 16., 22.] {
+        let mut f = Figure::new(IntendedUse::Custom {
+            width_mm: 150.,
+            font_pt: font,
+        });
+        f.height_mm = 150.;
+        f.tight_export = false;
+        let scale =
+            f.scale(Scale::new([0., 1.], Normalization::Linear, ColorMap::ember()).unwrap());
+        f.panels.push(Panel::new(
+            Rect::new(40., 20., 80., 70.),
+            Axes::new(
+                [0., 1.],
+                [0., 1.],
+                r"Longitude $[{}^\circ\mathrm{E}]$",
+                r"$y$",
+            ),
+        ));
+        let mut bar = Colorbar::new(Rect::new(40., 91., 80., 2.), scale, "TEC", vec![0., 1.]);
+        bar.horizontal = true;
+        f.colorbars.push(bar);
+        assert!(
+            f.svg().is_ok(),
+            "Default SVG export must resolve the collision without an explicit layout call"
+        );
+        f.layout_colorbars().unwrap();
+        let mut latex = f.latex.clone();
+        latex.font_pt = font;
+        let glyphs = latex
+            .typeset(vec![f.panels[0].axes.as_ref().unwrap().xlabel.clone()])
+            .unwrap();
+        let glyph = &glyphs[&f.panels[0].axes.as_ref().unwrap().xlabel];
+        let mm_per_pt = 25.4 / 72.27;
+        let label_bottom = 90. + 2.5 * font * mm_per_pt + glyph.height_pt * mm_per_pt / 2.;
+        assert!(
+            f.colorbars[0].rect.y - label_bottom >= f.colorbar_gap_em * font * mm_per_pt - 1e-8
+        );
+        let first = f.colorbars[0].rect;
+        f.layout_colorbars().unwrap();
+        assert_eq!(first.y, f.colorbars[0].rect.y, "Layout must be idempotent");
+        assert!(f.svg().is_ok());
+    }
 }
 
 #[test]

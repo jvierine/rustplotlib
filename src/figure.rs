@@ -160,10 +160,16 @@ fn write_line(svg: &mut String, panel: &Panel, line: &Line) -> Result<()> {
         write!(path, "{} {:.6} {:.6} ", if prior { "L" } else { "M" }, x, y)?;
         prior = true;
     }
-    write!(svg,
+    write!(
+        svg,
         "<path d=\"{path}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" stroke-opacity=\"{}\" {} stroke-linejoin=\"round\"/>",
-        line.color, line.width_pt * MM_PER_PT, line.opacity,
-        line.dash.as_ref().map(|d| format!("stroke-dasharray=\"{d}\"")).unwrap_or_default()
+        line.color,
+        line.width_pt * MM_PER_PT,
+        line.opacity,
+        line.dash
+            .as_ref()
+            .map(|d| format!("stroke-dasharray=\"{d}\""))
+            .unwrap_or_default()
     )?;
     Ok(())
 }
@@ -455,27 +461,55 @@ impl Panel {
     /// Layer indices after the replaced group shift. Call after panel sizing.
     #[cfg(feature = "export")]
     pub fn rasterize_lines(&mut self, range: std::ops::Range<usize>, dpi: f64) -> Result<()> {
-        ensure!(range.start < range.end && range.end <= self.layers.len(), "Invalid line layer range");
-        ensure!(dpi.is_finite() && dpi > 0. && self.rect.valid(), "Invalid rasterization dimensions");
+        ensure!(
+            range.start < range.end && range.end <= self.layers.len(),
+            "Invalid line layer range"
+        );
+        ensure!(
+            dpi.is_finite() && dpi > 0. && self.rect.valid(),
+            "Invalid rasterization dimensions"
+        );
         let (xx, yy) = self.limits();
-        ensure!(xx.iter().chain(&yy).all(|v| v.is_finite()) && xx[0] < xx[1] && yy[0] < yy[1], "Invalid rasterization axes");
+        ensure!(
+            xx.iter().chain(&yy).all(|v| v.is_finite()) && xx[0] < xx[1] && yy[0] < yy[1],
+            "Invalid rasterization axes"
+        );
         let w = (self.rect.width * dpi / 25.4).ceil() as u32;
         let h = (self.rect.height * dpi / 25.4).ceil() as u32;
-        let mut svg = format!("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"{} {} {} {}\">", self.rect.x, self.rect.y, self.rect.width, self.rect.height);
+        let mut svg = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"{} {} {} {}\">",
+            self.rect.x, self.rect.y, self.rect.width, self.rect.height
+        );
         for layer in &self.layers[range.clone()] {
-            let Layer::Line(line) = layer else { anyhow::bail!("rasterize_lines requires only line layers"); };
-            ensure!(line.opacity.is_finite() && (0. ..=1.).contains(&line.opacity) && line.width_pt.is_finite() && line.width_pt >= 0., "Invalid rasterized line style");
+            let Layer::Line(line) = layer else {
+                anyhow::bail!("rasterize_lines requires only line layers");
+            };
+            ensure!(
+                line.opacity.is_finite()
+                    && (0. ..=1.).contains(&line.opacity)
+                    && line.width_pt.is_finite()
+                    && line.width_pt >= 0.,
+                "Invalid rasterized line style"
+            );
             write_line(&mut svg, self, line)?;
         }
         svg.push_str("</svg>");
         let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default())?;
         let mut pix = resvg::tiny_skia::Pixmap::new(w, h).context("Invalid raster dimensions")?;
-        resvg::render(&tree, resvg::tiny_skia::Transform::identity(), &mut pix.as_mut());
+        resvg::render(
+            &tree,
+            resvg::tiny_skia::Transform::identity(),
+            &mut pix.as_mut(),
+        );
         // tiny-skia stores premultiplied channels; PNG expects straight RGBA.
-        let rgba: Vec<u8> = pix.pixels().iter().flat_map(|p| {
-            let p = p.demultiply();
-            [p.red(), p.green(), p.blue(), p.alpha()]
-        }).collect();
+        let rgba: Vec<u8> = pix
+            .pixels()
+            .iter()
+            .flat_map(|p| {
+                let p = p.demultiply();
+                [p.red(), p.green(), p.blue(), p.alpha()]
+            })
+            .collect();
         let image = image::RgbaImage::from_raw(w, h, rgba).context("Invalid raster image")?;
         self.layers.splice(range, [Layer::Image(image)]);
         Ok(())
@@ -587,6 +621,11 @@ pub struct Figure {
     pub check_label_overlap: bool,
     /// Reject labels obscured by colorbars, and axis labels colliding with data panels.
     pub check_label_geometry: bool,
+    /// Reserve measured axis-label space before drawing an external colorbar.
+    /// Disable only when exact manual placement is required.
+    pub auto_colorbar_layout: bool,
+    /// Minimum whitespace between axis decorations and an external colorbar, in em.
+    pub colorbar_gap_em: f64,
 }
 // Rasterize shared geometry into one coverage buffer. Independent antialiased
 // SVG paths leave background seams even when their corners coincide exactly.
@@ -747,6 +786,8 @@ impl Figure {
             export_padding_mm: 2.0,
             check_label_overlap: true,
             check_label_geometry: true,
+            auto_colorbar_layout: true,
+            colorbar_gap_em: 0.6,
         }
     }
     pub fn scale(&mut self, s: Scale) -> usize {
@@ -834,7 +875,10 @@ impl Figure {
                         continue;
                     }
                     Layer::Line(f) => {
-                        ensure!(f.opacity.is_finite() && (0.0..=1.0).contains(&f.opacity), "Invalid line opacity");
+                        ensure!(
+                            f.opacity.is_finite() && (0.0..=1.0).contains(&f.opacity),
+                            "Invalid line opacity"
+                        );
                         ensure!(
                             f.width_pt.is_finite() && f.width_pt >= 0.0,
                             "Invalid line width"
@@ -974,8 +1018,8 @@ impl Figure {
             .fold(self.font_pt * MM_PER_PT * 1.35, f64::max);
         let mut text_widths = vec![0.0_f64; legend.columns];
         for (i, entry) in legend.entries.iter().enumerate() {
-            text_widths[i % legend.columns] = text_widths[i % legend.columns]
-                .max(glyphs[&entry.label].width_pt * MM_PER_PT);
+            text_widths[i % legend.columns] =
+                text_widths[i % legend.columns].max(glyphs[&entry.label].width_pt * MM_PER_PT);
         }
         let symbol_width = legend
             .entries
@@ -991,8 +1035,10 @@ impl Figure {
         for width in text_widths.iter().take(legend.columns - 1) {
             offsets.push(offsets.last().unwrap() + text_offset + width + column_gap);
         }
-        let width = 2. * legend.padding_mm + text_offset * legend.columns as f64
-            + text_widths.iter().sum::<f64>() + column_gap * (legend.columns - 1) as f64;
+        let width = 2. * legend.padding_mm
+            + text_offset * legend.columns as f64
+            + text_widths.iter().sum::<f64>()
+            + column_gap * (legend.columns - 1) as f64;
         let rows = legend.entries.len().div_ceil(legend.columns);
         let height = 2. * legend.padding_mm + row_height * rows as f64;
         let mask = if legend.avoid_data {
@@ -1175,6 +1221,92 @@ impl Figure {
         let mut latex = self.latex.clone();
         latex.font_pt = self.font_pt;
         let glyphs = latex.typeset(self.all_labels())?;
+        if self.auto_colorbar_layout {
+            let mut resolved = self.clone();
+            resolved.resolve_colorbar_layout(&glyphs)?;
+            return resolved.svg_with_glyphs(&glyphs);
+        }
+        self.svg_with_glyphs(&glyphs)
+    }
+
+    /// Resolve external colorbar spacing using actual LaTeX glyph dimensions.
+    /// SVG/save apply this automatically. Call explicitly before exporting layout
+    /// coordinates for a live WebGL overlay. Panel/data rectangles do not move.
+    pub fn layout_colorbars(&mut self) -> Result<()> {
+        self.validate()?;
+        let mut latex = self.latex.clone();
+        latex.font_pt = self.font_pt;
+        let glyphs = latex.typeset(self.all_labels())?;
+        self.resolve_colorbar_layout(&glyphs)
+    }
+
+    fn resolve_colorbar_layout(&mut self, glyphs: &BTreeMap<String, Glyph>) -> Result<()> {
+        ensure!(
+            self.colorbar_gap_em.is_finite() && self.colorbar_gap_em >= 0.,
+            "Invalid colorbar spacing"
+        );
+        let em = self.font_pt * MM_PER_PT;
+        let gap = self.colorbar_gap_em * em;
+        let height = |label: &str| glyphs.get(label).map_or(0., |g| g.height_pt * MM_PER_PT);
+        for bar in &mut self.colorbars {
+            let original = bar.rect;
+            for panel in &self.panels {
+                let r = panel.rect;
+                if bar.horizontal
+                    && original.y >= r.y + r.height - 0.05
+                    && original.x < r.x + r.width
+                    && original.x + original.width > r.x
+                {
+                    let mut bottom = r.y + r.height;
+                    if panel.axes_visible
+                        && let Some(a) = &panel.axes
+                    {
+                        if !a.xlabel.is_empty() {
+                            bottom = bottom.max(r.y + r.height + 2.5 * em + height(&a.xlabel) / 2.);
+                        }
+                        for (i, v) in a.xticks.iter().enumerate() {
+                            if *v >= a.xlim[0] && *v <= a.xlim[1] {
+                                bottom = bottom.max(
+                                    r.y + r.height
+                                        + 0.95 * em
+                                        + height(&tick_label(*v, &a.xticklabels, i)) / 2.,
+                                );
+                            }
+                        }
+                    }
+                    bar.rect.y = bar.rect.y.max(bottom + gap);
+                } else if !bar.horizontal
+                    && original.x >= r.x + r.width - 0.05
+                    && original.y < r.y + r.height
+                    && original.y + original.height > r.y
+                {
+                    bar.rect.x = bar.rect.x.max(r.x + r.width + gap);
+                }
+            }
+            if bar.rect.x > original.x {
+                ensure!(
+                    bar.rect.x + bar.rect.width <= self.width_mm,
+                    "Insufficient figure width for colorbar clearance; reserve more space beside the panel"
+                );
+            }
+            if bar.rect.y > original.y {
+                let label_bottom = if bar.label.is_empty() {
+                    bar.rect.y + bar.rect.height
+                } else {
+                    bar.rect.y + bar.rect.height + 2.9 * em + height(&bar.label) / 2.
+                };
+                let ticks_bottom = bar
+                    .ticks
+                    .iter()
+                    .map(|v| bar.rect.y + bar.rect.height + 1.3 * em + height(&number(*v)) / 2.)
+                    .fold(bar.rect.y + bar.rect.height, f64::max);
+                self.height_mm = self.height_mm.max(label_bottom.max(ticks_bottom) + gap);
+            }
+        }
+        Ok(())
+    }
+
+    fn svg_with_glyphs(&self, glyphs: &BTreeMap<String, Glyph>) -> Result<String> {
         let mut s = format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"{}mm\" height=\"{}mm\" viewBox=\"0 0 {} {}\"><rect width=\"100%\" height=\"100%\" fill=\"white\"/>",
             self.width_mm, self.height_mm, self.width_mm, self.height_mm
@@ -1816,7 +1948,7 @@ pub fn number(x: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ColorMap, Normalization, Legend, LegendEntry};
+    use crate::{ColorMap, Legend, LegendEntry, Normalization};
     #[test]
     fn polygon_cells_preserve_coverage_masks_and_winding() {
         let polygons = vec![
@@ -1975,7 +2107,10 @@ mod tests {
     #[test]
     fn line_opacity_validates_exports_and_respects_invisible_data() {
         let mut f = Figure::new(IntendedUse::ArticleWide);
-        let mut p = Panel::new(Rect::new(10., 10., 40., 40.), Axes::new([0., 1.], [0., 1.], "", ""));
+        let mut p = Panel::new(
+            Rect::new(10., 10., 40., 40.),
+            Axes::new([0., 1.], [0., 1.], "", ""),
+        );
         p.axes_visible = false;
         let mut l = Line::new(vec![[0., 0.], [1., 1.]], "#333333");
         l.opacity = 0.2;
@@ -1983,23 +2118,53 @@ mod tests {
         f.panels.push(p);
         assert!(f.svg().unwrap().contains("stroke-opacity=\"0.2\""));
         let legend = Legend::new(vec![LegendEntry::line("Ensemble", "#333333")]);
-        if let Layer::Line(l) = &mut f.panels[0].layers[0] { l.opacity = 0.; }
-        assert!(f.legend_occupancy(&f.panels[0], &legend).unwrap().iter().all(|x| !x));
-        if let Layer::Line(l) = &mut f.panels[0].layers[0] { l.opacity = 1.1; }
+        if let Layer::Line(l) = &mut f.panels[0].layers[0] {
+            l.opacity = 0.;
+        }
+        assert!(
+            f.legend_occupancy(&f.panels[0], &legend)
+                .unwrap()
+                .iter()
+                .all(|x| !x)
+        );
+        if let Layer::Line(l) = &mut f.panels[0].layers[0] {
+            l.opacity = 1.1;
+        }
         assert!(f.validate().is_err());
     }
 
     #[test]
     fn compact_legend_fills_rows_and_keeps_labels_apart() {
         let f = Figure::new(IntendedUse::ArticleWide);
-        let p = Panel::new(Rect::new(10., 10., 100., 70.), Axes::new([0., 1.], [0., 1.], "", ""));
-        let mut legend = Legend::new(vec![LegendEntry::line("A", "red"), LegendEntry::line("B", "blue"), LegendEntry::line("C", "green")]);
+        let p = Panel::new(
+            Rect::new(10., 10., 100., 70.),
+            Axes::new([0., 1.], [0., 1.], "", ""),
+        );
+        let mut legend = Legend::new(vec![
+            LegendEntry::line("A", "red"),
+            LegendEntry::line("B", "blue"),
+            LegendEntry::line("C", "green"),
+        ]);
         legend.columns = 2;
         legend.avoid_data = false;
-        let glyphs = ["A", "B", "C"].into_iter().map(|s| (s.to_string(), Glyph { body: String::new(), view_box: [0., 0., 10., 5.], width_pt: 10., height_pt: 5. })).collect();
+        let glyphs = ["A", "B", "C"]
+            .into_iter()
+            .map(|s| {
+                (
+                    s.to_string(),
+                    Glyph {
+                        body: String::new(),
+                        view_box: [0., 0., 10., 5.],
+                        width_pt: 10.,
+                        height_pt: 5.,
+                    },
+                )
+            })
+            .collect();
         let mut svg = String::new();
         let mut bounds = Vec::new();
-        f.render_legend(&mut svg, &p, &legend, &glyphs, &mut 0, &mut bounds).unwrap();
+        f.render_legend(&mut svg, &p, &legend, &glyphs, &mut 0, &mut bounds)
+            .unwrap();
         assert_eq!(bounds.len(), 3);
         assert_eq!(bounds[0].1[1], bounds[1].1[1]);
         assert!(bounds[1].1[0] > bounds[0].1[2]);
@@ -2012,7 +2177,10 @@ mod tests {
     #[cfg(feature = "export")]
     #[test]
     fn rasterized_lines_preserve_transparency_and_layer_order() {
-        let mut p = Panel::new(Rect::new(20., 30., 25.4, 25.4), Axes::new([0., 1.], [0., 1.], "", ""));
+        let mut p = Panel::new(
+            Rect::new(20., 30., 25.4, 25.4),
+            Axes::new([0., 1.], [0., 1.], "", ""),
+        );
         let mut line = Line::new(vec![[0., 0.5], [1., 0.5]], "#808080");
         line.opacity = 0.5;
         line.width_pt = 4.;
@@ -2022,11 +2190,19 @@ mod tests {
         p.rasterize_lines(0..2, 100.).unwrap();
         assert_eq!(p.layers.len(), 2);
         assert!(matches!(p.layers[1], Layer::Line(_)));
-        let Layer::Image(image) = &p.layers[0] else { panic!("expected rasterized ensemble"); };
+        let Layer::Image(image) = &p.layers[0] else {
+            panic!("expected rasterized ensemble");
+        };
         assert_eq!(image.dimensions(), (100, 100));
         let pixel = image.get_pixel(50, 50);
-        assert!((pixel[0] as i16 - 128).abs() <= 1, "Must unpremultiply RGB before PNG encoding");
-        assert!((pixel[3] as i16 - 192).abs() <= 1, "Overlapping curves accumulate opacity");
+        assert!(
+            (pixel[0] as i16 - 128).abs() <= 1,
+            "Must unpremultiply RGB before PNG encoding"
+        );
+        assert!(
+            (pixel[3] as i16 - 192).abs() <= 1,
+            "Overlapping curves accumulate opacity"
+        );
         assert_eq!(image.get_pixel(0, 0)[3], 0);
         assert!(p.rasterize_lines(0..1, 100.).is_err());
     }
