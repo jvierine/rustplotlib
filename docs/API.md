@@ -39,6 +39,63 @@ an explicit physical width. Values outside scale limits clip to end colors.
 
 ## LaTeX
 
+`scientific_text("m = 3.54e-11 kg")` produces
+`m = $3.54\\times10^{-11}$ kg`. It also handles literals already inside math
+mode, removes redundant zeros from signed exponents, and supports multiple
+numbers in an interval annotation.
+
+`Axes::set_yscale(AxisScale::Log10)` and `set_xscale` enable logarithmic axes
+with one labelled major tick per decade and minor ticks at 2--9 within each
+decade. Limits must be positive. Paths, physical-size markers, meshes, scalar
+field sampling and legend coverage use the same coordinate transform.
+
+`Figure::contour_label(text, candidates, bounds, obstacles)` selects a clear
+position along a supplied contour in figure millimetres. It measures actual
+LaTeX glyphs, avoids measurement footprints and existing labels, and adds an
+opaque backing to interrupt the line beneath the text. Supply measurement
+footprints as `Rect` obstacles. If the contour itself is crowded, it searches
+nearby positions and draws a short leader to the contour. If neither search
+succeeds, it reports an error rather than covering data.
+`annotation::clear_label_position` exposes the pure
+geometry search for applications with their own font metrics. Any `Label`
+can also set `background` and `padding_mm` explicitly.
+
+`Figure::curved_contour_label(plain_text, font_pt, path, bounds, obstacles)`
+returns individual glyph labels following the contour's local tangents, with
+consistent baseline metrics and opaque backing. It selects a gently curved
+on-path span avoiding measurements and existing labels, and reverses reading
+direction where needed to keep text upright. Coordinates are millimetres;
+disjoint paths should be separated by nonfinite points. No leader is used.
+
+`Figure::graticule_labels(ticks, obstacles)` uses projected candidate anchors
+and actual LaTeX bounds for upright geographic coordinates. Each
+`annotation::GraticuleLabel` has `latex`, `candidates` (figure millimetres, in
+preference order), and `required`. Required coordinates are protected and placed
+first; optional labels are thinned on collision, duplicate labels are omitted,
+and an impossible required placement is an error. Backings interrupt the
+graticule without moving the geographic anchor sideways.
+Supply neighbouring graticule strokes as obstacle rectangles too, including
+their stroke width and desired clearance: collision checks protect the entire
+label backing, not just its centre or the visible ink.
+For a Hammer map,
+meridians converge at the poles: use a lower-latitude labeling band rather than
+pretending that each meridian intersects the lower ellipse at a distinct point.
+
+`Projection::Hammer { central_longitude, west_positive }` provides native
+equal-area forward/inverse transforms. `parallel`, `meridian` and `boundary`
+construct the graticule and frame in Rust; no imported graphics paths are used.
+`Contour::paths(level)` joins native contour segments for projection and labels.
+`Panel::data_to_figure` and `stroke_obstacles` use the rendering transform to
+measure geometry in millimetres. `Figure::boundary_label` offsets upright text
+along a boundary normal, including the full measured glyph extent and clearance.
+`Panel::scatter_colored` draws physical-size, scalar-coloured vector symbols
+with edges and opacity. `ColorMap::turbo` implements Google's published Turbo
+polynomial independently of any Python plotting library.
+
+Python may act as an API to Rustplotlib or prepare scientific arrays. Matplotlib
+is not a dependency and must not supply figure layouts, axes, annotations,
+transforms or graphics scenes. Native figure builders own those operations.
+
 Labels accept LaTeX directly: `$\omega=\nabla\times\boldsymbol{u}$`.
 `latex::text()` escapes ordinary text. Set `figure.latex.preamble` to use a
 different font family or packages. Defaults are Palatino text and mathematics
@@ -136,8 +193,11 @@ panel.legend = Some(legend);
 
 `avoid_data` defaults to true. `position` specifies the preferred corner; if
 occupied, other corners and then interior positions are searched. An empty
-`avoid_layers` list protects all non-image layers. Set explicit layer indices
-to allow contextual images, coastlines or other background layers to be covered.
+`avoid_layers` list protects visible data, including scatter markers and error
+bars, but ignores images and `Panel::major_grid` backgrounds. A line's
+`protect_from_legend` defaults to true; set it to false for contextual strokes.
+Explicit layer indices override these defaults, allowing a background to be
+protected or selected data layers to be used as the only obstacles.
 Protection uses finite, visible data coverage (including polygon footprints
 and line widths), not just data-point centres, at a quarter-millimetre occupancy
 resolution with an additional half-millimetre clearance. Missing/masked cells
@@ -203,6 +263,14 @@ For line ensembles, `Line::opacity` (default 1) controls per-curve transparency.
 Use thin strokes and low opacity to keep contextual trajectories subordinate
 to the primary measurement distribution; overlapping curves accumulate density.
 Opacity must lie in 0--1. Invisible curves do not block legend placement.
+
+`Line::fill = Some("#245774".into())` fills a closed vector path, and
+`fill_opacity` controls its independent transparency. Set `width_pt = 0` for
+an uncertainty band without an outline. Repeat the first vertex to close the
+stroke. Nonfinite vertices separate subpaths; retain opposite winding directions
+for holes. PDF and SVG keep filled paths as vector geometry. Filled interiors
+also participate in legend avoidance, and `Panel::rasterize_lines` can rasterize
+dense groups of filled paths while preserving transparency and layer order.
 
 `Legend::columns` (default 1) creates a compact key with entries filled across
 each row. Columns are sized to their own labels, with consistent symbol spacing.

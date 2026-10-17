@@ -56,6 +56,9 @@ pub struct Label {
     pub y: f64,
     pub rotation: f64,
     pub color: String,
+    pub background: Option<String>,
+    pub padding_mm: f64,
+    pub leader: Option<[f64; 2]>,
 }
 impl Label {
     pub fn new(latex: impl Into<String>, x: f64, y: f64) -> Self {
@@ -65,6 +68,9 @@ impl Label {
             y,
             rotation: 0.0,
             color: "#171717".into(),
+            background: None,
+            padding_mm: 0.7,
+            leader: None,
         }
     }
 }
@@ -76,6 +82,7 @@ pub struct SecondaryAxis {
     pub label: String,
     /// (primary coordinate, secondary label value).
     pub ticks: Vec<(f64, f64)>,
+    pub tick_labels: Option<Vec<String>>,
 }
 impl SecondaryAxis {
     pub fn new(
@@ -91,6 +98,7 @@ impl SecondaryAxis {
         Ok(Self {
             label: label.into(),
             ticks,
+            tick_labels: None,
         })
     }
 }
@@ -106,6 +114,13 @@ pub struct Axes {
     pub xticklabels: Option<Vec<String>>,
     pub yticklabels: Option<Vec<String>>,
     pub secondary_x: Option<SecondaryAxis>,
+    pub secondary_y: Option<SecondaryAxis>,
+    pub show_x_axis: bool,
+    pub show_y_axis: bool,
+    pub xscale: crate::AxisScale,
+    pub yscale: crate::AxisScale,
+    pub xminor_ticks: Vec<f64>,
+    pub yminor_ticks: Vec<f64>,
 }
 impl Axes {
     pub fn new(
@@ -124,7 +139,32 @@ impl Axes {
             xticklabels: None,
             yticklabels: None,
             secondary_x: None,
+            secondary_y: None,
+            show_x_axis: true,
+            show_y_axis: true,
+            xscale: crate::AxisScale::Linear,
+            yscale: crate::AxisScale::Linear,
+            xminor_ticks: vec![],
+            yminor_ticks: vec![],
         }
+    }
+    pub fn set_xscale(&mut self, scale: crate::AxisScale) -> Result<()> {
+        scale.validate(self.xlim)?;
+        self.xscale = scale;
+        (self.xticks, self.xminor_ticks) = scale.ticks(self.xlim);
+        self.xticklabels = if scale == crate::AxisScale::Log10 {
+            Some(self.xticks.iter().map(|v| format!("$10^{{{:.0}}}$", v.log10())).collect())
+        } else { None };
+        Ok(())
+    }
+    pub fn set_yscale(&mut self, scale: crate::AxisScale) -> Result<()> {
+        scale.validate(self.ylim)?;
+        self.yscale = scale;
+        (self.yticks, self.yminor_ticks) = scale.ticks(self.ylim);
+        self.yticklabels = if scale == crate::AxisScale::Log10 {
+            Some(self.yticks.iter().map(|v| format!("$10^{{{:.0}}}$", v.log10())).collect())
+        } else { None };
+        Ok(())
     }
 }
 #[derive(Clone, Debug)]
@@ -135,6 +175,11 @@ pub struct Line {
     pub dash: Option<String>,
     /// Per-curve opacity. Overlapping ensemble members accumulate naturally.
     pub opacity: f64,
+    /// Optional closed-path fill, useful for uncertainty bands and vector markers.
+    pub fill: Option<String>,
+    pub fill_opacity: f64,
+    /// Protect data from automatic legend placement; contextual grids opt out.
+    pub protect_from_legend: bool,
 }
 impl Line {
     pub fn new(points: Vec<[f64; 2]>, color: impl Into<String>) -> Self {
@@ -144,6 +189,9 @@ impl Line {
             width_pt: 1.1,
             dash: None,
             opacity: 1.,
+            fill: None,
+            fill_opacity: 1.,
+            protect_from_legend: true,
         }
     }
 }
@@ -157,12 +205,18 @@ fn write_line(svg: &mut String, panel: &Panel, line: &Line) -> Result<()> {
             continue;
         }
         let [x, y] = panel.xy(*point);
+        if !x.is_finite() || !y.is_finite() {
+            prior = false;
+            continue;
+        }
         write!(path, "{} {:.6} {:.6} ", if prior { "L" } else { "M" }, x, y)?;
         prior = true;
     }
     write!(
         svg,
-        "<path d=\"{path}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\" stroke-opacity=\"{}\" {} stroke-linejoin=\"round\"/>",
+        "<path d=\"{path}\" fill=\"{}\" fill-opacity=\"{}\" stroke=\"{}\" stroke-width=\"{}\" stroke-opacity=\"{}\" {} stroke-linejoin=\"round\"/>",
+        line.fill.as_deref().unwrap_or("none"),
+        line.fill_opacity,
         line.color,
         line.width_pt * MM_PER_PT,
         line.opacity,
@@ -381,6 +435,33 @@ impl Contour {
         }
         out
     }
+
+    /// Join the native contour segments into connected paths, suitable for
+    /// projection and tangent-following labels. Masked cells remain gaps.
+    pub fn paths(&self, level: f64) -> Vec<Vec<[f64; 2]>> {
+        let mut segments = self.segments(level);
+        let mut paths = Vec::new();
+        let near = |a: [f64;2], b: [f64;2]| (a[0]-b[0]).abs() < 1e-9 && (a[1]-b[1]).abs() < 1e-9;
+        while let Some(segment) = segments.pop() {
+            let mut path = std::collections::VecDeque::from(segment);
+            loop {
+                let head = *path.front().unwrap();
+                let tail = *path.back().unwrap();
+                let found = segments.iter().enumerate().find_map(|(i, s)| {
+                    if near(s[0], tail) { Some((i, false, s[1])) }
+                    else if near(s[1], tail) { Some((i, false, s[0])) }
+                    else if near(s[0], head) { Some((i, true, s[1])) }
+                    else if near(s[1], head) { Some((i, true, s[0])) }
+                    else { None }
+                });
+                let Some((i, front, point)) = found else { break; };
+                segments.swap_remove(i);
+                if front { path.push_front(point); } else { path.push_back(point); }
+            }
+            paths.push(path.into_iter().collect());
+        }
+        paths
+    }
 }
 #[derive(Clone, Debug)]
 pub enum Layer {
@@ -488,7 +569,9 @@ impl Panel {
                 line.opacity.is_finite()
                     && (0. ..=1.).contains(&line.opacity)
                     && line.width_pt.is_finite()
-                    && line.width_pt >= 0.,
+                    && line.width_pt >= 0.
+                    && line.fill_opacity.is_finite()
+                    && (0. ..=1.).contains(&line.fill_opacity),
                 "Invalid rasterized line style"
             );
             write_line(&mut svg, self, line)?;
@@ -574,10 +657,56 @@ impl Panel {
     }
     fn xy(&self, p: [f64; 2]) -> [f64; 2] {
         let (x, y) = self.limits();
+        let xs = self.axes.as_ref().map(|a| a.xscale).unwrap_or_default();
+        let ys = self.axes.as_ref().map(|a| a.yscale).unwrap_or_default();
         [
-            self.rect.x + (p[0] - x[0]) / (x[1] - x[0]) * self.rect.width,
-            self.rect.y + self.rect.height - (p[1] - y[0]) / (y[1] - y[0]) * self.rect.height,
+            self.rect.x + (xs.transform(p[0]) - xs.transform(x[0])) / (xs.transform(x[1]) - xs.transform(x[0])) * self.rect.width,
+            self.rect.y + self.rect.height - (ys.transform(p[1]) - ys.transform(y[0])) / (ys.transform(y[1]) - ys.transform(y[0])) * self.rect.height,
         ]
+    }
+    /// Convert a data coordinate to figure millimetres, using the same axis
+    /// transformations as lines, symbols and meshes.
+    pub fn data_to_figure(&self, point: [f64; 2]) -> [f64; 2] {
+        self.xy(point)
+    }
+
+    /// Physical stroke footprints for annotation collision checks. Supply
+    /// densely sampled curves when the coordinate transformation is nonlinear.
+    pub fn stroke_obstacles(&self, line: &Line, clearance_mm: f64) -> Vec<Rect> {
+        let margin = line.width_pt*MM_PER_PT/2.+clearance_mm;
+        line.points.windows(2).filter_map(|p| {
+            let a = self.xy(p[0]); let b = self.xy(p[1]);
+            a.iter().chain(b.iter()).all(|v| v.is_finite()).then(|| Rect::new(
+                a[0].min(b[0])-margin,a[1].min(b[1])-margin,
+                (a[0]-b[0]).abs()+2.*margin,(a[1]-b[1]).abs()+2.*margin))
+        }).collect()
+    }
+
+    /// Add faint major grid lines without introducing minor-grid clutter.
+    pub fn major_grid(&mut self, color: &str, width_pt: f64) {
+        let Some(a) = &self.axes else { return; };
+        let mut paths = Vec::new();
+        for &x in &a.xticks {
+            if x > a.xlim[0] && x < a.xlim[1] {
+                paths.extend([[x, a.ylim[0]], [x, a.ylim[1]], [f64::NAN; 2]]);
+            }
+        }
+        for &y in &a.yticks {
+            if y > a.ylim[0] && y < a.ylim[1] {
+                paths.extend([[a.xlim[0], y], [a.xlim[1], y], [f64::NAN; 2]]);
+            }
+        }
+        let mut grid = Line::new(paths, color);
+        grid.width_pt = width_pt;
+        grid.protect_from_legend = false;
+        self.layers.insert(0, Layer::Line(grid));
+    }
+    fn data_fraction(&self, u: f64, v: f64) -> [f64; 2] {
+        let (x, y) = self.limits();
+        let xs = self.axes.as_ref().map(|a| a.xscale).unwrap_or_default();
+        let ys = self.axes.as_ref().map(|a| a.yscale).unwrap_or_default();
+        [xs.inverse(xs.transform(x[0]) + u*(xs.transform(x[1])-xs.transform(x[0]))),
+         ys.inverse(ys.transform(y[0]) + v*(ys.transform(y[1])-ys.transform(y[0])))]
     }
 }
 #[derive(Clone, Debug)]
@@ -848,6 +977,8 @@ impl Figure {
                 legend.validate(p)?;
             }
             if let Some(a) = &p.axes {
+                a.xscale.validate(a.xlim)?;
+                a.yscale.validate(a.ylim)?;
                 for (ticks, labels) in [(&a.xticks, &a.xticklabels), (&a.yticks, &a.yticklabels)] {
                     ensure!(ticks.iter().all(|v| v.is_finite()), "Non-finite axis tick");
                     ensure!(
@@ -856,6 +987,11 @@ impl Figure {
                         ),
                         "Tick label count must match tick positions and labels must be nonempty"
                     );
+                }
+                for secondary in a.secondary_x.iter().chain(a.secondary_y.iter()) {
+                    ensure!(secondary.ticks.iter().all(|(x,v)|x.is_finite()&&v.is_finite()),"Non-finite secondary-axis tick");
+                    ensure!(secondary.tick_labels.as_ref().is_none_or(|labels|labels.len()==secondary.ticks.len()
+                        && labels.iter().all(|s|!s.is_empty())),"Secondary tick label count must match tick positions");
                 }
             }
             let (x, y) = p.limits();
@@ -875,6 +1011,10 @@ impl Figure {
                         continue;
                     }
                     Layer::Line(f) => {
+                        ensure!(
+                            f.fill_opacity.is_finite() && (0.0..=1.0).contains(&f.fill_opacity),
+                            "Invalid path fill opacity"
+                        );
                         ensure!(
                             f.opacity.is_finite() && (0.0..=1.0).contains(&f.opacity),
                             "Invalid line opacity"
@@ -980,7 +1120,11 @@ impl Figure {
                 );
                 if let Some(top) = &a.secondary_x {
                     v.push(top.label.clone());
-                    v.extend(top.ticks.iter().map(|(_, v)| number(*v)));
+                    v.extend(top.ticks.iter().enumerate().map(|(i,(_,v))|tick_label(*v,&top.tick_labels,i)));
+                }
+                if let Some(right) = &a.secondary_y {
+                    v.push(right.label.clone());
+                    v.extend(right.ticks.iter().enumerate().map(|(i,(_,v))|tick_label(*v,&right.tick_labels,i)));
                 }
             }
             v.extend(p.labels.iter().map(|l| l.latex.clone()));
@@ -1131,6 +1275,7 @@ impl Figure {
                     continue;
                 }
                 let [a, b] = [panel.xy(pair[0]), panel.xy(pair[1])];
+                if !a.iter().chain(&b).all(|v| v.is_finite()) { continue; }
                 let steps = ((b[0] - a[0]).hypot(b[1] - a[1]) * 8.).ceil().max(1.) as usize;
                 let radius = (width_pt * MM_PER_PT * 2.).ceil().max(1.) as i32;
                 for i in 0..=steps {
@@ -1147,7 +1292,11 @@ impl Figure {
         };
         for (i, layer) in panel.layers.iter().enumerate() {
             let protected = if legend.avoid_layers.is_empty() {
-                !matches!(layer, Layer::Image(_))
+                match layer {
+                    Layer::Image(_) => false,
+                    Layer::Line(line) => line.protect_from_legend,
+                    _ => true,
+                }
             } else {
                 legend.avoid_layers.contains(&i)
             };
@@ -1159,7 +1308,19 @@ impl Figure {
                     if line.opacity > 0. {
                         protect_line(&mut mask, &line.points, line.width_pt);
                     }
-                    continue;
+                    if line.fill.is_some() && line.fill_opacity > 0. {
+                        let polygons: Vec<Vec<[f64; 2]>> = line.points
+                            .split(|p| !p.iter().all(|v| v.is_finite()))
+                            .filter(|p| p.len() >= 3)
+                            .map(|p| p.to_vec()).collect();
+                        let values = vec![0.5; polygons.len()];
+                        let mesh = PolygonMesh::new(polygons, values, 0)?;
+                        let scale = Scale::new([0., 1.], crate::Normalization::Linear,
+                            crate::ColorMap::new(vec![[0., 0., 0.], [0., 0., 0.]])?)?;
+                        raster_polygons(&mesh, panel, &scale, 101.6)
+                    } else {
+                        continue;
+                    }
                 }
                 Layer::PolygonMesh(mesh) => {
                     raster_polygons(mesh, panel, &self.scales[mesh.scale], 101.6)
@@ -1181,11 +1342,9 @@ impl Figure {
                         continue;
                     }
                     let mut img = image::RgbaImage::new(w, h);
-                    let (xx, yy) = panel.limits();
                     for y in 0..h {
                         for x in 0..w {
-                            let px = xx[0] + (x as f64 + 0.5) / w as f64 * (xx[1] - xx[0]);
-                            let py = yy[1] - (y as f64 + 0.5) / h as f64 * (yy[1] - yy[0]);
+                            let [px, py] = panel.data_fraction((x as f64 + 0.5)/w as f64, 1.-(y as f64+0.5)/h as f64);
                             let visible = match layer {
                                 Layer::Pcolormesh(f) => {
                                     self.scales[f.scale].map(f.sample(px, py)).is_some()
@@ -1394,17 +1553,14 @@ impl Figure {
             {
                 let axis_start = label_bounds.len();
                 let em = self.font_pt * MM_PER_PT;
-                write!(
-                    s,
-                    "<path d=\"M {} {} H {} M {} {} V {}\" stroke=\"#444\" stroke-width=\"0.18\" fill=\"none\"/>",
-                    r.x,
-                    r.y + r.height,
-                    r.x + r.width,
-                    r.x,
-                    r.y,
-                    r.y + r.height
-                )?;
+                if a.show_x_axis {
+                    write!(s,"<path d=\"M {} {} H {}\" stroke=\"#444\" stroke-width=\"0.18\" fill=\"none\"/>",r.x,r.y+r.height,r.x+r.width)?;
+                }
+                if a.show_y_axis {
+                    write!(s,"<path d=\"M {} {} V {}\" stroke=\"#444\" stroke-width=\"0.18\" fill=\"none\"/>",r.x,r.y,r.y+r.height)?;
+                }
                 for (i, v) in a.xticks.iter().enumerate() {
+                    if !a.show_x_axis { continue; }
                     if *v < a.xlim[0] || *v > a.xlim[1] {
                         continue;
                     }
@@ -1425,6 +1581,18 @@ impl Figure {
                         &mut label_bounds,
                     )?;
                 }
+                for &v in &a.xminor_ticks {
+                    if !a.show_x_axis { continue; }
+                    if v < a.xlim[0] || v > a.xlim[1] { continue; }
+                    let [x, y] = p.xy([v, a.ylim[0]]);
+                    write!(s, "<path d=\"M {x} {y} v 0.7\" stroke=\"#444\" stroke-width=\"0.15\"/>")?;
+                }
+                for &v in &a.yminor_ticks {
+                    if !a.show_y_axis { continue; }
+                    if v < a.ylim[0] || v > a.ylim[1] { continue; }
+                    let [x, y] = p.xy([a.xlim[0], v]);
+                    write!(s, "<path d=\"M {x} {y} h -0.7\" stroke=\"#444\" stroke-width=\"0.15\"/>")?;
+                }
                 if let Some(top) = &a.secondary_x {
                     write!(
                         s,
@@ -1433,7 +1601,7 @@ impl Figure {
                         r.y,
                         r.x + r.width
                     )?;
-                    for &(primary, value) in &top.ticks {
+                    for (i,&(primary, value)) in top.ticks.iter().enumerate() {
                         if primary < a.xlim[0] || primary > a.xlim[1] {
                             continue;
                         }
@@ -1446,7 +1614,7 @@ impl Figure {
                         place(
                             &mut s,
                             &glyphs,
-                            &number(value),
+                            &tick_label(value,&top.tick_labels,i),
                             x,
                             r.y - 0.95 * em,
                             0.,
@@ -1468,6 +1636,7 @@ impl Figure {
                     )?;
                 }
                 for (i, v) in a.yticks.iter().enumerate() {
+                    if !a.show_y_axis { continue; }
                     if *v < a.ylim[0] || *v > a.ylim[1] {
                         continue;
                     }
@@ -1490,7 +1659,7 @@ impl Figure {
                         &mut label_bounds,
                     )?;
                 }
-                place(
+                if a.show_x_axis { place(
                     &mut s,
                     &glyphs,
                     &a.xlabel,
@@ -1500,8 +1669,8 @@ impl Figure {
                     "#171717",
                     &mut serial,
                     &mut label_bounds,
-                )?;
-                place(
+                )?; }
+                if a.show_y_axis { place(
                     &mut s,
                     &glyphs,
                     &a.ylabel,
@@ -1511,10 +1680,24 @@ impl Figure {
                     "#171717",
                     &mut serial,
                     &mut label_bounds,
-                )?;
+                )?; }
+                if let Some(right) = &a.secondary_y {
+                    let edge = r.x+r.width;
+                    write!(s,"<path d=\"M {edge} {} V {}\" stroke=\"#444\" stroke-width=\"0.18\"/>",r.y,r.y+r.height)?;
+                    for (i,&(primary,value)) in right.ticks.iter().enumerate() {
+                        if primary < a.ylim[0] || primary > a.ylim[1] { continue; }
+                        let [_,y] = p.xy([a.xlim[1],primary]);
+                        write!(s,"<path d=\"M {edge} {y} h 1.2\" stroke=\"#444\" stroke-width=\"0.18\"/>")?;
+                        let text = tick_label(value,&right.tick_labels,i);
+                        let width = glyphs[&text].width_pt*MM_PER_PT;
+                        place(&mut s,&glyphs,&text,edge+0.6*em+width/2.,y,0.,"#555555",&mut serial,&mut label_bounds)?;
+                    }
+                    place(&mut s,&glyphs,&right.label,edge+3.8*em,r.y+r.height/2.,-90.,"#555555",&mut serial,&mut label_bounds)?;
+                }
                 axis_bounds.extend(label_bounds[axis_start..].iter().cloned());
             }
             for l in &p.labels {
+                place_background(&mut s, &glyphs, l)?;
                 place(
                     &mut s,
                     &glyphs,
@@ -1545,10 +1728,12 @@ impl Figure {
         for (bi, b) in self.colorbars.iter().enumerate() {
             let sc = &self.scales[b.scale];
             let r = b.rect;
-            if sc.colors.listed {
+            if sc.colors.listed || sc.colors.stops.len() > 256 {
                 // A lookup-table strip preserves discrete colours exactly and
                 // avoids huge PDF stitching functions (two stops per bin),
-                // which some TeX/PDF consumers cannot import safely.
+                // which some TeX/PDF consumers cannot import safely. Dense
+                // continuous palettes also use one strip, not oversized PDF
+                // stitching functions with hundreds of sub-functions.
                 let n = sc.colors.stops.len() as u32;
                 let mut strip = image::RgbaImage::new(
                     if b.horizontal { n } else { 1 },
@@ -1585,6 +1770,7 @@ impl Figure {
             }
             let em = self.font_pt * MM_PER_PT;
             for v in &b.ticks {
+                if *v < sc.limits[0] || *v > sc.limits[1] { continue; }
                 let [a, z] = sc.limits.map(|x| sc.transform(x));
                 let t = (sc.transform(*v) - a) / (z - a);
                 let (x, y) = if b.horizontal {
@@ -1622,6 +1808,7 @@ impl Figure {
             )?;
         }
         for l in &self.labels {
+            place_background(&mut s, &glyphs, l)?;
             place(
                 &mut s,
                 &glyphs,
@@ -1698,12 +1885,10 @@ impl Figure {
         let r = p.rect;
         let w = (r.width * self.raster_dpi / 25.4).ceil().max(1.0) as u32;
         let h = (r.height * self.raster_dpi / 25.4).ceil().max(1.0) as u32;
-        let (x, y) = p.limits();
         let mut img = image::RgbaImage::new(w, h);
         for j in 0..h {
-            let yy = y[1] - (j as f64 + 0.5) / h as f64 * (y[1] - y[0]);
             for i in 0..w {
-                let xx = x[0] + (i as f64 + 0.5) / w as f64 * (x[1] - x[0]);
+                let [xx, yy] = p.data_fraction((i as f64+0.5)/w as f64, 1.-(j as f64+0.5)/h as f64);
                 img.put_pixel(i, j, image::Rgba(sample(xx, yy).unwrap_or([0, 0, 0, 0])));
             }
         }
@@ -1848,6 +2033,22 @@ impl Figure {
 fn rgb(c: [u8; 4]) -> String {
     format!("rgb({},{},{})", c[0], c[1], c[2])
 }
+fn place_background(s: &mut String, glyphs: &BTreeMap<String, Glyph>, label: &Label) -> Result<()> {
+    if let Some(anchor) = label.leader {
+        write!(s, "<path data-role=\"label-leader\" d=\"M {} {} L {} {}\" fill=\"none\" stroke=\"{}\" stroke-width=\"0.15\"/>",
+            anchor[0], anchor[1], label.x, label.y, label.color)?;
+    }
+    if let Some(color) = &label.background {
+        if label.latex.is_empty() { return Ok(()); }
+        let glyph = &glyphs[&label.latex];
+        let w = glyph.width_pt*MM_PER_PT+2.*label.padding_mm;
+        let h = glyph.height_pt*MM_PER_PT+2.*label.padding_mm;
+        write!(s, "<rect data-role=\"label-backing\" x=\"{}\" y=\"{}\" width=\"{w}\" height=\"{h}\" transform=\"rotate({} {} {})\" fill=\"{color}\"/>",
+            label.x-w/2., label.y-h/2., label.rotation, label.x, label.y)?;
+    }
+    Ok(())
+}
+
 fn place(
     s: &mut String,
     glyphs: &BTreeMap<String, Glyph>,
@@ -1949,6 +2150,51 @@ pub fn number(x: f64) -> String {
 mod tests {
     use super::*;
     use crate::{ColorMap, Legend, LegendEntry, Normalization};
+    #[test]
+    fn native_secondary_y_and_clock_labels_are_validated() {
+        let mut f=Figure::new(IntendedUse::ArticleWide);
+        let mut a=Axes::new([12.,24.],[0.,10.],"UTC","Counts");
+        a.secondary_x=Some(SecondaryAxis::new("Solar",vec![19.,21.],|v|v-7.).unwrap());
+        a.secondary_x.as_mut().unwrap().tick_labels=Some(vec!["19:00".into(),"21:00".into()]);
+        a.secondary_y=Some(SecondaryAxis::new("Speed",vec![20.,40.],|v|v/5.).unwrap());
+        a.show_y_axis=false;
+        f.panels.push(Panel::new(Rect::new(20.,20.,100.,50.),a));
+        assert!(f.validate().is_ok());
+        assert!(f.all_labels().contains(&"19:00".into()));
+        assert!(f.all_labels().contains(&"Speed".into()));
+        f.panels[0].axes.as_mut().unwrap().secondary_x.as_mut().unwrap().tick_labels=Some(vec![]);
+        assert!(f.validate().is_err());
+    }
+    #[test]
+    fn native_contour_paths_preserve_all_segments() {
+        let c = Contour::new(vec![-1.,0.,1.],vec![-1.,0.,1.],
+            vec![-2.,-1.,0.,-1.,0.,1.,0.,1.,2.],vec![-0.5,0.5],0,false).unwrap();
+        let paths = c.paths(0.5);
+        assert_eq!(paths.iter().map(|p| p.len()-1).sum::<usize>(),c.segments(0.5).len());
+        assert_eq!(paths.len(),1);
+        for p in paths.into_iter().flatten() {
+            assert!((p[0]+p[1]-0.5).abs() < 1e-12);
+        }
+    }
+    #[test]
+    fn dense_native_colourbar_uses_one_texture_not_pdf_stitching() {
+        let mut f = Figure::new(IntendedUse::ArticleWide);
+        let scale = f.scale(Scale::new([15.,71.],Normalization::Linear,ColorMap::turbo()).unwrap());
+        f.colorbars.push(Colorbar::new(Rect::new(20.,20.,3.,50.),scale,"Speed",vec![20.,40.,60.]));
+        let svg = f.svg().unwrap();
+        assert!(svg.contains("data:image/png;base64,"));
+        assert!(!svg.contains("linearGradient"));
+    }
+    #[test]
+    fn logarithmic_axes_map_equal_decades_and_raster_inverse() {
+        let mut axes = Axes::new([1., 1000.], [1., 1000.], "", "");
+        axes.set_xscale(crate::AxisScale::Log10).unwrap();
+        axes.set_yscale(crate::AxisScale::Log10).unwrap();
+        let p = Panel::new(Rect::new(0., 0., 90., 90.), axes);
+        assert_eq!(p.xy([10., 100.]), [30., 30.]);
+        let sample = p.data_fraction(1./3., 2./3.);
+        assert!((sample[0]-10.).abs()<1e-10 && (sample[1]-100.).abs()<1e-10);
+    }
     #[test]
     fn polygon_cells_preserve_coverage_masks_and_winding() {
         let polygons = vec![
@@ -2061,6 +2307,37 @@ mod tests {
         assert_eq!(ticks([0.0, 10.0], 5), vec![0.0, 2.0, 4.0, 6.0, 8.0, 10.0]);
     }
     #[test]
+    fn default_legend_avoids_scatter_and_errors_but_not_grid() {
+        use crate::{Legend, LegendEntry};
+        let f = Figure::new(IntendedUse::ArticleWide);
+        let mut p = Panel::new(Rect::new(10., 10., 40., 40.),
+            Axes::new([0., 1.], [0., 1.], "", ""));
+        p.major_grid("#dddddd", 0.4);
+        let legend = Legend::new(vec![LegendEntry::circle("Data", "green")]);
+        assert!(legend.avoid_data && legend.avoid_layers.is_empty());
+        assert!(f.legend_occupancy(&p, &legend).unwrap().iter().all(|v| !v));
+        let scale = Scale::new([0., 1.], Normalization::Linear, ColorMap::diverging()).unwrap();
+        p.scatter_colored(&[[0.8, 0.8]], &[0.5], &scale, 5., 1., "none").unwrap();
+        p.errorbars(&[[0.8, 0.8]], Some(&[[0.55, 0.95]]),
+            Some(&[[0.65, 0.95]]), "green", 1., 3., 1.).unwrap();
+        let mask = f.legend_occupancy(&p, &legend).unwrap();
+        assert!(mask[32 * 160 + 128], "Scatter centre must be protected");
+        assert!(mask[32 * 160 + 96], "Errorbar stem must be protected");
+        let occupied = |r: Rect| {
+            mask.iter().enumerate().any(|(i, &value)| {
+                let x = 10. + (i % 160) as f64 / 4.;
+                let y = 10. + (i / 160) as f64 / 4.;
+                value && x >= r.x && x <= r.x+r.width && y >= r.y && y <= r.y+r.height
+            })
+        };
+        let preferred = Rect::new(33., 12., 15., 9.);
+        assert!(occupied(preferred));
+        let placed = legend.place(p.rect, 15., 9., &occupied).unwrap();
+        assert!(!occupied(placed));
+        assert!(placed.x != preferred.x || placed.y != preferred.y);
+    }
+
+    #[test]
     fn legend_protects_visible_cells_but_can_cover_background() {
         use crate::{Legend, LegendEntry};
         let mut f = Figure::new(IntendedUse::ArticleWide);
@@ -2102,6 +2379,29 @@ mod tests {
         f.panels.push(p);
         assert!(f.validate().is_ok());
         assert!(f.all_labels().contains(&"Data".into()));
+    }
+
+    #[test]
+    fn filled_vector_path_preserves_transparency() {
+        let mut f = Figure::new(IntendedUse::ArticleWide);
+        let mut p = Panel::new(Rect::new(10., 10., 40., 40.),
+            Axes::new([0., 1.], [0., 1.], "", ""));
+        p.axes_visible = false;
+        let mut band = Line::new(vec![[0., 0.], [1., 0.], [1., 1.], [0., 0.]], "#123456");
+        band.fill = Some("#abcdef".into());
+        band.fill_opacity = 0.25;
+        band.width_pt = 0.;
+        p.push(Layer::Line(band));
+        f.panels.push(p);
+        let svg = f.svg().unwrap();
+        assert!(svg.contains("fill=\"#abcdef\" fill-opacity=\"0.25\""));
+        let legend = Legend::new(vec![LegendEntry::line("Data", "black")]);
+        let occupancy = f.legend_occupancy(&f.panels[0], &legend).unwrap();
+        assert!(occupancy[120 * 160 + 120]);
+        if let Layer::Line(band) = &mut f.panels[0].layers[0] {
+            band.fill_opacity = 1.1;
+        }
+        assert!(f.validate().is_err());
     }
 
     #[test]

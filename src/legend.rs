@@ -8,6 +8,8 @@ pub enum LegendPosition {
     UpperRight,
     LowerLeft,
     LowerRight,
+    CenterRight,
+    AboveCenter,
 }
 
 #[derive(Clone, Debug)]
@@ -51,8 +53,9 @@ impl LegendEntry {
 }
 
 /// A frameless white legend. `position` is preferred, not forced, when data
-/// avoidance is enabled. Only `avoid_layers` are protected: a background image
-/// or contextual map boundaries may deliberately be covered. If no clear
+/// avoidance is enabled. By default, visible data are protected while images
+/// and major grids are contextual backgrounds. Nonempty `avoid_layers` explicitly
+/// selects protected layers, overriding those defaults. If no clear
 /// placement exists, export fails rather than hiding the protected data.
 #[derive(Clone, Debug)]
 pub struct Legend {
@@ -112,6 +115,10 @@ impl Legend {
         occupied: &dyn Fn(Rect) -> bool,
     ) -> Result<Rect> {
         let inset = 2.;
+        if matches!(self.position,LegendPosition::AboveCenter) {
+            ensure!(width<=panel.width,"External legend wider than panel");
+            return Ok(Rect::new(panel.x+(panel.width-width)/2.,panel.y-height-2.,width,height));
+        }
         let left = panel.x + inset;
         let right = panel.x + panel.width - inset - width;
         let top = panel.y + inset;
@@ -125,6 +132,8 @@ impl Legend {
             LegendPosition::UpperRight => [right, top],
             LegendPosition::LowerLeft => [left, bottom],
             LegendPosition::LowerRight => [right, bottom],
+            LegendPosition::CenterRight => [right,(top+bottom)/2.],
+            LegendPosition::AboveCenter => unreachable!(),
         };
         let mut candidates = vec![
             preferred,
@@ -163,6 +172,13 @@ impl Legend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn compact_external_legend_leaves_the_data_panel_clear() {
+        let mut legend=Legend::new(vec![LegendEntry::line("Receiver","blue")]);
+        legend.position=LegendPosition::AboveCenter;
+        let r=legend.place(Rect::new(10.,20.,50.,60.),40.,6.,&|_|true).unwrap();
+        assert_eq!(r.x,15.);assert!(r.y+r.height<20.);
+    }
     #[test]
     fn prefers_requested_corner_but_moves_away_from_data() {
         let mut legend = Legend::new(vec![LegendEntry::line("Model", "blue")]);
