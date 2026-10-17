@@ -22,7 +22,8 @@ with h5py.File(temporary, 'w') as f:
     gallery_checks = root / 'validation/gallery-web.json'
     if gallery_checks.exists():
         checked = json.loads(gallery_checks.read_text())
-        assert checked['passed'] and checked['cards'] == 21 and not checked['errors']
+        assert checked['passed'] and not checked['errors']
+        assert checked['cards'] == checked['expectedCards'] == len(checked['titles']) > 0
         f.attrs['gallery_browser_checks_json'] = json.dumps(checked)
     f.attrs['visual_inspection'] = 'Exact PDF raster, native PNG, desktop/mobile browser, volume frames'
     f.attrs['examples'] = 'Synthetic fields and analytic vortex rings'

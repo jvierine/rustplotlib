@@ -13,6 +13,8 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -35,6 +37,7 @@ jobs:
           npm run test:web
           node scripts/test_cartography.mjs
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: figures-and-browser-validation
           path: |
