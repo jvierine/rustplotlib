@@ -101,12 +101,18 @@ pub struct FieldView {
     edge_y: WebGlTexture,
     nx: i32,
     ny: i32,
+    max_texture_size: u32,
 }
 #[wasm_bindgen]
 impl FieldView {
     #[wasm_bindgen(constructor)]
     pub fn new(canvas: HtmlCanvasElement) -> Result<FieldView, JsValue> {
         let gl = context(&canvas)?;
+        // Query fixed device limits once: getParameter can synchronize the GPU.
+        let max_texture_size = gl
+            .get_parameter(Gl::MAX_TEXTURE_SIZE)?
+            .as_f64()
+            .unwrap_or(0.0) as u32;
         let p = program(&gl, include_str!("field.frag"))?;
         let t = texture(&gl, Gl::TEXTURE_2D)?;
         let edge_x = texture(&gl, Gl::TEXTURE_2D)?;
@@ -145,18 +151,14 @@ impl FieldView {
             edge_y,
             nx: 0,
             ny: 0,
+            max_texture_size,
         })
     }
     pub fn set_data(&mut self, nx: u32, ny: u32, values: &[f32]) -> Result<(), JsValue> {
         if nx < 1 || ny < 1 || values.len() != nx as usize * ny as usize {
             return Err(error("Field dimensions do not match data"));
         }
-        let max = self
-            .gl
-            .get_parameter(Gl::MAX_TEXTURE_SIZE)?
-            .as_f64()
-            .unwrap_or(0.0) as u32;
-        if nx > max || ny > max {
+        if nx > self.max_texture_size || ny > self.max_texture_size {
             return Err(error("Field exceeds GPU texture limit"));
         }
         self.gl.use_program(Some(&self.p));
@@ -164,7 +166,21 @@ impl FieldView {
         self.gl.active_texture(Gl::TEXTURE0);
         self.gl.bind_texture(Gl::TEXTURE_2D, Some(&self.t));
         let arr = js_sys::Float32Array::from(values);
-        self.gl
+        if self.nx == nx as i32 && self.ny == ny as i32 {
+            self.gl
+                .tex_sub_image_2d_with_i32_and_i32_and_u32_and_type_and_opt_array_buffer_view(
+                    Gl::TEXTURE_2D,
+                    0,
+                    0,
+                    0,
+                    nx as i32,
+                    ny as i32,
+                    Gl::RED,
+                    Gl::FLOAT,
+                    Some(&arr),
+                )?;
+        } else {
+            self.gl
             .tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_array_buffer_view(
                 Gl::TEXTURE_2D,
                 0,
@@ -176,6 +192,7 @@ impl FieldView {
                 Gl::FLOAT,
                 Some(&arr),
             )?;
+        }
         self.nx = nx as i32;
         self.ny = ny as i32;
         self.draw();
