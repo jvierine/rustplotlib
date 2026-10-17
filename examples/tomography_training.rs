@@ -14,10 +14,11 @@ fn main() -> Result<()> {
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
     }
-    let batch = state["batch_history"]
+    let fixed=state["fixed_training_history"].as_array().is_some_and(|v|!v.is_empty());
+    let batch = fixed || state["batch_history"]
         .as_array()
         .is_some_and(|v| !v.is_empty());
-    let history = state[if batch { "batch_history" } else { "history" }]
+    let history = state[if fixed {"fixed_training_history"} else if batch { "batch_history" } else { "history" }]
         .as_array()
         .cloned()
         .unwrap_or_default();
@@ -25,7 +26,7 @@ fn main() -> Result<()> {
         .iter()
         .enumerate()
         .filter_map(|(i, m)| {
-            m["train_rmse"].as_f64().filter(|v| v.is_finite()).map(|r| {
+            m[if fixed {"rmse"} else {"train_rmse"}].as_f64().filter(|v| v.is_finite()).map(|r| {
                 [
                     m[if batch { "step" } else { "epoch" }]
                         .as_f64()
@@ -61,7 +62,9 @@ fn main() -> Result<()> {
     }
     figure.panels.push(panel);
     figure.labels.push(Label::new(
-        if batch {
+        if fixed {
+            "Tomography: fixed training measurements"
+        } else if batch {
             "Tomography training: minibatch RMS"
         } else {
             "Tomography training: epoch RMS"
