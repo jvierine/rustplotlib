@@ -2,8 +2,8 @@
 //!
 //! Panels are positioned in millimetres. Layers, axes and colorbars are
 //! independent objects; no particular plot layout or theme is mandatory.
-pub mod color;
 pub mod annotation;
+pub mod color;
 pub mod format;
 pub use format::scientific_text;
 pub mod axis_scale;

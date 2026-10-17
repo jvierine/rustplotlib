@@ -83,7 +83,10 @@ impl Legend {
 
     pub(crate) fn validate(&self, panel: &Panel) -> Result<()> {
         ensure!(!self.entries.is_empty(), "Empty legend");
-        ensure!(self.columns > 0 && self.columns <= self.entries.len(), "Invalid legend column count");
+        ensure!(
+            self.columns > 0 && self.columns <= self.entries.len(),
+            "Invalid legend column count"
+        );
         ensure!(
             self.padding_mm.is_finite() && self.padding_mm >= 0.,
             "Invalid legend padding"
@@ -115,9 +118,14 @@ impl Legend {
         occupied: &dyn Fn(Rect) -> bool,
     ) -> Result<Rect> {
         let inset = 2.;
-        if matches!(self.position,LegendPosition::AboveCenter) {
-            ensure!(width<=panel.width,"External legend wider than panel");
-            return Ok(Rect::new(panel.x+(panel.width-width)/2.,panel.y-height-2.,width,height));
+        if matches!(self.position, LegendPosition::AboveCenter) {
+            ensure!(width <= panel.width, "External legend wider than panel");
+            return Ok(Rect::new(
+                panel.x + (panel.width - width) / 2.,
+                panel.y - height - 2.,
+                width,
+                height,
+            ));
         }
         let left = panel.x + inset;
         let right = panel.x + panel.width - inset - width;
@@ -132,7 +140,7 @@ impl Legend {
             LegendPosition::UpperRight => [right, top],
             LegendPosition::LowerLeft => [left, bottom],
             LegendPosition::LowerRight => [right, bottom],
-            LegendPosition::CenterRight => [right,(top+bottom)/2.],
+            LegendPosition::CenterRight => [right, (top + bottom) / 2.],
             LegendPosition::AboveCenter => unreachable!(),
         };
         let mut candidates = vec![
@@ -174,10 +182,13 @@ mod tests {
     use super::*;
     #[test]
     fn compact_external_legend_leaves_the_data_panel_clear() {
-        let mut legend=Legend::new(vec![LegendEntry::line("Receiver","blue")]);
-        legend.position=LegendPosition::AboveCenter;
-        let r=legend.place(Rect::new(10.,20.,50.,60.),40.,6.,&|_|true).unwrap();
-        assert_eq!(r.x,15.);assert!(r.y+r.height<20.);
+        let mut legend = Legend::new(vec![LegendEntry::line("Receiver", "blue")]);
+        legend.position = LegendPosition::AboveCenter;
+        let r = legend
+            .place(Rect::new(10., 20., 50., 60.), 40., 6., &|_| true)
+            .unwrap();
+        assert_eq!(r.x, 15.);
+        assert!(r.y + r.height < 20.);
     }
     #[test]
     fn prefers_requested_corner_but_moves_away_from_data() {

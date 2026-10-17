@@ -1,7 +1,7 @@
 //! Figure typography specified at its final size in the article, not on an
 //! arbitrary canvas that will later be scaled by LaTeX.
 use crate::{Figure, IntendedUse};
-use anyhow::{ensure, Result};
+use anyhow::{Result, ensure};
 
 /// Measure `\linewidth` in the intended figure environment (column or full
 /// width), and use the manuscript's normal body font size in TeX points.
@@ -21,24 +21,32 @@ impl ArticleLayout {
     /// Check typography after the actual LaTeX inclusion scaling. This also
     /// audits legacy figures that were not created with an article contract.
     pub fn check_inclusion(self, figure: &Figure, included_width_mm: f64) -> Result<()> {
-        ensure!(!figure.tight_export,
-            "Cannot certify article font size with tight cropping enabled");
-        ensure!(included_width_mm.is_finite() && included_width_mm > 0.,
-            "Invalid article inclusion width");
-        let scale=included_width_mm/figure.width_mm;
-        for font in [figure.font_pt,figure.latex.font_pt] {
-            let printed=font*scale;
-            ensure!((printed-self.body_font_pt).abs()<0.01,
+        ensure!(
+            !figure.tight_export,
+            "Cannot certify article font size with tight cropping enabled"
+        );
+        ensure!(
+            included_width_mm.is_finite() && included_width_mm > 0.,
+            "Invalid article inclusion width"
+        );
+        let scale = included_width_mm / figure.width_mm;
+        for font in [figure.font_pt, figure.latex.font_pt] {
+            let printed = font * scale;
+            ensure!(
+                (printed - self.body_font_pt).abs() < 0.01,
                 "Printed figure font is {printed:.3} pt, not article body size {:.3} pt; regenerate at the final inclusion width",
-                self.body_font_pt);
+                self.body_font_pt
+            );
         }
         let explicit = regex::Regex::new(r"\\fontsize\s*\{\s*([0-9]+(?:\.[0-9]+)?)\s*\}")?;
         for label in figure.all_labels() {
             for size in explicit.captures_iter(&label) {
-                let printed=size[1].parse::<f64>()?*scale;
-                ensure!(printed+0.01>=self.body_font_pt,
+                let printed = size[1].parse::<f64>()? * scale;
+                ensure!(
+                    printed + 0.01 >= self.body_font_pt,
                     "Explicit annotation font prints at {printed:.3} pt, below article body size {:.3} pt",
-                    self.body_font_pt);
+                    self.body_font_pt
+                );
             }
         }
         Ok(())
@@ -87,16 +95,20 @@ impl ArticleLayout {
 
 impl ArticleContract {
     pub(crate) fn validate(self, f: &Figure) -> Result<()> {
-        ensure!((f.width_mm - self.width_mm).abs() < 1e-8,
-            "Article figure width changed: construct a new ArticleLayout figure at the desired final width");
+        ensure!(
+            (f.width_mm - self.width_mm).abs() < 1e-8,
+            "Article figure width changed: construct a new ArticleLayout figure at the desired final width"
+        );
         ensure!(
             (f.font_pt - self.layout.body_font_pt).abs() < 1e-8
                 && (f.latex.font_pt - self.layout.body_font_pt).abs() < 1e-8,
             "Article typography changed: labels must match the configured body font size"
         );
-        ensure!(!f.tight_export,
-            "Tight cropping changes the article inclusion scale; keep the fixed article canvas and adjust panel layout instead");
-        self.layout.check_inclusion(f,self.width_mm)?;
+        ensure!(
+            !f.tight_export,
+            "Tight cropping changes the article inclusion scale; keep the fixed article canvas and adjust panel layout instead"
+        );
+        self.layout.check_inclusion(f, self.width_mm)?;
         Ok(())
     }
 }
@@ -121,8 +133,10 @@ impl Figure {
         pdf_path_in_article: &str,
     ) -> Result<()> {
         let path = path.as_ref();
-        ensure!(path.extension().and_then(|s| s.to_str()) == Some("pdf"),
-            "Article export requires PDF");
+        ensure!(
+            path.extension().and_then(|s| s.to_str()) == Some("pdf"),
+            "Article export requires PDF"
+        );
         let mut inclusion = self.latex_include(pdf_path_in_article)?;
         let mut export = self.clone();
         export.article_contract = None;
@@ -132,10 +146,12 @@ impl Figure {
         let width_mm = tree.size().width() as f64 * 25.4 / 96.;
         inclusion = inclusion.replace(
             &format!("width={:.6}mm", self.width_mm),
-            &format!("width={width_mm:.6}mm"));
+            &format!("width={width_mm:.6}mm"),
+        );
         inclusion = inclusion.replace(
             &format!("final width {:.6} mm", self.width_mm),
-            &format!("final width {width_mm:.6} mm"));
+            &format!("final width {width_mm:.6} mm"),
+        );
         for extension in ["pdf", "png", "svg"] {
             export.save(path.with_extension(extension))?;
         }
@@ -210,16 +226,25 @@ mod tests {
     #[cfg(feature = "export")]
     #[test]
     fn trimmed_article_export_never_rescales_typography() {
-        let mut f = ArticleLayout::new(184., 10.).unwrap().figure(1., 100.).unwrap();
+        let mut f = ArticleLayout::new(184., 10.)
+            .unwrap()
+            .figure(1., 100.)
+            .unwrap();
         let mut panel = crate::Panel::new(
             crate::Rect::new(30., 20., 100., 50.),
-            crate::Axes::new([0., 1.], [0., 1.], "", ""));
+            crate::Axes::new([0., 1.], [0., 1.], "", ""),
+        );
         panel.axes_visible = false;
-        panel.push(crate::Layer::Line(crate::Line::new(vec![[0., 0.], [1., 1.]], "black")));
+        panel.push(crate::Layer::Line(crate::Line::new(
+            vec![[0., 0.], [1., 1.]],
+            "black",
+        )));
         f.panels.push(panel);
-        let dir = std::env::temp_dir().join(format!("rustplotlib-article-crop-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("rustplotlib-article-crop-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        f.save_for_article(dir.join("figure.pdf"), "figure.pdf").unwrap();
+        f.save_for_article(dir.join("figure.pdf"), "figure.pdf")
+            .unwrap();
         let svg = std::fs::read_to_string(dir.join("figure.svg")).unwrap();
         let include = std::fs::read_to_string(dir.join("figure.include.tex")).unwrap();
         let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default()).unwrap();
@@ -230,9 +255,13 @@ mod tests {
         assert_eq!(f.font_pt, 10.);
         assert_eq!(f.width_mm, 184.);
         assert!(!f.tight_export);
-        f.save_fixed_for_article(dir.join("fixed.pdf"), "fixed.pdf").unwrap();
-        assert!(std::fs::read_to_string(dir.join("fixed.include.tex")).unwrap()
-            .contains("width=184.000000mm"));
+        f.save_fixed_for_article(dir.join("fixed.pdf"), "fixed.pdf")
+            .unwrap();
+        assert!(
+            std::fs::read_to_string(dir.join("fixed.include.tex"))
+                .unwrap()
+                .contains("width=184.000000mm")
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]
@@ -243,10 +272,11 @@ mod tests {
         assert_eq!(a.font_pt, b.font_pt);
         assert_eq!(b.width_mm, 82.3);
         assert!(!b.tight_export);
-        assert!(b
-            .latex_include("figures/map.pdf")
-            .unwrap()
-            .contains("width=82.300000mm"));
+        assert!(
+            b.latex_include("figures/map.pdf")
+                .unwrap()
+                .contains("width=82.300000mm")
+        );
         assert!(article.figure(1.1, 10.).is_err());
         assert!(ArticleLayout::new(f64::NAN, 10.).is_err());
     }
@@ -270,18 +300,28 @@ mod tests {
 
     #[test]
     fn radiant_figure_regression_checks_printed_not_requested_font() {
-        let article=ArticleLayout::new(184.,10.).unwrap();
-        let mut old=Figure::new(IntendedUse::Custom{width_mm:196.,font_pt:9.});
-        old.tight_export=false;
+        let article = ArticleLayout::new(184., 10.).unwrap();
+        let mut old = Figure::new(IntendedUse::Custom {
+            width_mm: 196.,
+            font_pt: 9.,
+        });
+        old.tight_export = false;
         // The old recipe shrank a 196 mm, 9 pt figure to 86% of the article width.
-        let error=article.check_inclusion(&old,0.86*184.).unwrap_err().to_string();
-        assert!(error.contains("7.266"),"{error}");
-        let corrected=article.figure(1.,106.).unwrap();
-        article.check_inclusion(&corrected,184.).unwrap();
-        assert!(article.check_inclusion(&corrected,0.86*184.).is_err());
-        let mut undersized=article.figure(1.,106.).unwrap();
-        undersized.labels.push(crate::Label::new(r"{\fontsize{7}{8}\selectfont 3 h}",30.,30.));
-        assert!(article.check_inclusion(&undersized,184.).is_err());
+        let error = article
+            .check_inclusion(&old, 0.86 * 184.)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("7.266"), "{error}");
+        let corrected = article.figure(1., 106.).unwrap();
+        article.check_inclusion(&corrected, 184.).unwrap();
+        assert!(article.check_inclusion(&corrected, 0.86 * 184.).is_err());
+        let mut undersized = article.figure(1., 106.).unwrap();
+        undersized.labels.push(crate::Label::new(
+            r"{\fontsize{7}{8}\selectfont 3 h}",
+            30.,
+            30.,
+        ));
+        assert!(article.check_inclusion(&undersized, 184.).is_err());
         assert!(undersized.svg().is_err());
     }
 }

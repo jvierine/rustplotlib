@@ -14,26 +14,38 @@ fn main() -> Result<()> {
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
     }
-    let fixed=state["fixed_training_history"].as_array().is_some_and(|v|!v.is_empty());
-    let batch = fixed || state["batch_history"]
+    let fixed = state["fixed_training_history"]
         .as_array()
         .is_some_and(|v| !v.is_empty());
-    let history = state[if fixed {"fixed_training_history"} else if batch { "batch_history" } else { "history" }]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
+    let batch = fixed
+        || state["batch_history"]
+            .as_array()
+            .is_some_and(|v| !v.is_empty());
+    let history = state[if fixed {
+        "fixed_training_history"
+    } else if batch {
+        "batch_history"
+    } else {
+        "history"
+    }]
+    .as_array()
+    .cloned()
+    .unwrap_or_default();
     let points: Vec<[f64; 2]> = history
         .iter()
         .enumerate()
         .filter_map(|(i, m)| {
-            m[if fixed {"rmse"} else {"train_rmse"}].as_f64().filter(|v| v.is_finite()).map(|r| {
-                [
-                    m[if batch { "step" } else { "epoch" }]
-                        .as_f64()
-                        .unwrap_or(i as f64),
-                    r,
-                ]
-            })
+            m[if fixed { "rmse" } else { "train_rmse" }]
+                .as_f64()
+                .filter(|v| v.is_finite())
+                .map(|r| {
+                    [
+                        m[if batch { "step" } else { "epoch" }]
+                            .as_f64()
+                            .unwrap_or(i as f64),
+                        r,
+                    ]
+                })
         })
         .collect();
     let mut figure = Figure::new(IntendedUse::ArticleWide);

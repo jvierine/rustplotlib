@@ -18,7 +18,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: sudo apt-get update && sudo apt-get install -y texlive-latex-extra texlive-fonts-recommended dvisvgm poppler-utils libhdf5-dev
-      - run: cargo fmt --all --check && cargo test
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+      - name: Test Rust workspace
+        run: cargo test --workspace
       - run: cargo run --release --example publication
       - run: cargo run --release --example gallery
       - run: cargo run --release --example secondary_axis

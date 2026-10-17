@@ -20,14 +20,40 @@ impl ColorMap {
     /// https://gist.github.com/mikhailov-work/0d177465a8151eb6ede1768d51d476c7
     pub fn turbo() -> Self {
         let coefficients = [
-            [0.13572138,4.61539260,-42.66032258,132.13108234,-152.94239396,59.28637943],
-            [0.09140261,2.19418839,4.84296658,-14.18503333,4.27729857,2.82956604],
-            [0.10667330,12.64194608,-60.58204836,110.36276771,-89.90310912,27.34824973],
+            [
+                0.13572138,
+                4.61539260,
+                -42.66032258,
+                132.13108234,
+                -152.94239396,
+                59.28637943,
+            ],
+            [
+                0.09140261,
+                2.19418839,
+                4.84296658,
+                -14.18503333,
+                4.27729857,
+                2.82956604,
+            ],
+            [
+                0.10667330,
+                12.64194608,
+                -60.58204836,
+                110.36276771,
+                -89.90310912,
+                27.34824973,
+            ],
         ];
-        Self { listed: false, stops: (0..1024).map(|i| {
-            let x = i as f64/1023.;
-            coefficients.map(|c| c.iter().rev().fold(0_f64, |v,a| v*x+a).clamp(0.,1.))
-        }).collect() }
+        Self {
+            listed: false,
+            stops: (0..1024)
+                .map(|i| {
+                    let x = i as f64 / 1023.;
+                    coefficients.map(|c| c.iter().rev().fold(0_f64, |v, a| v * x + a).clamp(0., 1.))
+                })
+                .collect(),
+        }
     }
     /// Blue-white-red seismic palette, with the standard 256-entry lookup table.
     pub fn seismic() -> Self {
@@ -53,6 +79,13 @@ impl ColorMap {
                     })
                 })
                 .collect(),
+        }
+    }
+    /// Standard perceptually uniform plasma lookup table (Smith and van der Walt).
+    pub fn plasma() -> Self {
+        Self {
+            listed: true,
+            stops: crate::palettes::PLASMA.to_vec(),
         }
     }
     /// Standard perceptually uniform inferno lookup table (Smith and van der Walt).
@@ -210,6 +243,17 @@ impl Scale {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn plasma_preserves_standard_lookup_table() {
+        let map = ColorMap::plasma();
+        assert!(map.listed);
+        assert_eq!(map.stops.len(), 256);
+        assert_eq!(map.stops[0], [0.050383, 0.029803, 0.527975]);
+        assert_eq!(map.stops[255], [0.940015, 0.975158, 0.131326]);
+        assert_eq!(map.sample(0.), [13, 8, 135]);
+        assert_eq!(map.sample(1.), [240, 249, 33]);
+        Scale::new([15., 60.], Normalization::Linear, map).unwrap();
+    }
     #[test]
     fn normalizations_roundtrip_and_keep_missing_data() {
         for norm in [

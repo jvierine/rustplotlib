@@ -295,8 +295,11 @@ fn main() -> Result<()> {
     let lat = hf.dataset("latitude_edges_deg")?.read_raw::<f64>()?;
     let alt = hf.dataset("altitude_edges_km")?.read_raw::<f64>()?;
     let vals = hf.dataset("delta_temperature_K")?.read_raw::<f64>()?;
-    let temperature = fig.scale(Scale::new([-12.5, 12.5], Normalization::Linear,
-        ColorMap::seismic())?);
+    let temperature = fig.scale(Scale::new(
+        [-12.5, 12.5],
+        Normalization::Linear,
+        ColorMap::seismic(),
+    )?);
     let ax = Axes::new([-1.445, 1.015], [-1.015, 1.015], "", "");
     let mut curtain = Panel::new(Rect::new(78.02, 9., 79.98, 66.), ax);
     curtain.axes_visible = false;
@@ -308,21 +311,36 @@ fn main() -> Result<()> {
             corners.push([-r * theta.cos(), r * theta.sin()]);
         }
     }
-    curtain.push(Layer::QuadMesh(QuadMesh::new(lat.len()-1, alt.len()-1,
-        corners, vals, temperature)?));
+    curtain.push(Layer::QuadMesh(QuadMesh::new(
+        lat.len() - 1,
+        alt.len() - 1,
+        corners,
+        vals,
+        temperature,
+    )?));
     fig.panels.extend([left, right, curtain]);
     fig.labels.push(Label::new(r"TIE-GCM", 87., 12.));
     fig.labels.push(Label::new(r"120 min", 86., 17.));
     fig.labels.push(Label::new(r"100--500 km", 87., 22.));
-    let mut cb = Colorbar::new(Rect::new(79., 67., 19., 1.6), temperature,
-        r"$\Delta T$ (K)", vec![-12.5, 0., 12.5]);
+    let mut cb = Colorbar::new(
+        Rect::new(79., 67., 19., 1.6),
+        temperature,
+        r"$\Delta T$ (K)",
+        vec![-12.5, 0., 12.5],
+    );
     cb.horizontal = true;
     fig.colorbars.push(cb);
 
-    fig.labels
-        .push(Label::new(r"\textbf{a)\quad SMILE UVI precipitation and GNSS TEC LSTIDs}", 41., 4.));
-    fig.labels
-        .push(Label::new(r"\textbf{b)\quad MAGE Joule heating and LSTADs}", 125., 4.));
+    fig.labels.push(Label::new(
+        r"\textbf{a)\quad SMILE UVI precipitation and GNSS TEC LSTIDs}",
+        41.,
+        4.,
+    ));
+    fig.labels.push(Label::new(
+        r"\textbf{b)\quad MAGE Joule heating and LSTADs}",
+        125.,
+        4.,
+    ));
     let mut e = Label::new("EISCAT3D", 146., 34.);
     e.color = TEAL.into();
     fig.labels.push(e);

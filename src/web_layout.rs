@@ -1,7 +1,7 @@
 //! Web exports sized relative to surrounding CSS text, without responsive
 //! image rules silently shrinking all plot labels.
 use crate::{Figure, IntendedUse};
-use anyhow::{ensure, Result};
+use anyhow::{Result, ensure};
 
 #[derive(Clone, Copy, Debug)]
 pub struct WebLayout {
@@ -91,7 +91,11 @@ impl Figure {
             "Web embeds require a URL and accessible description"
         );
         let width_em = c.layout.width_css_px / c.layout.body_font_css_px;
-        Ok(format!("<div class=\"rustplotlib-viewport\" role=\"region\" aria-label=\"{alt}\" tabindex=\"0\" style=\"overflow-x:auto;max-width:100%\">\n  <img src=\"{url}\" alt=\"{alt}\" style=\"display:block;font-size:inherit;width:{width_em:.8}em;max-width:none;height:auto\">\n</div>\n", alt=escape(alt), url=escape(svg_url)))
+        Ok(format!(
+            "<div class=\"rustplotlib-viewport\" role=\"region\" aria-label=\"{alt}\" tabindex=\"0\" style=\"overflow-x:auto;max-width:100%\">\n  <img src=\"{url}\" alt=\"{alt}\" style=\"display:block;font-size:inherit;width:{width_em:.8}em;max-width:none;height:auto\">\n</div>\n",
+            alt = escape(alt),
+            url = escape(svg_url)
+        ))
     }
 
     /// Export SVG plus a `.embed.html` companion, without network dependencies.
@@ -103,8 +107,10 @@ impl Figure {
         alt: &str,
     ) -> Result<()> {
         let path = path.as_ref();
-        ensure!(path.extension().and_then(|s| s.to_str()) == Some("svg"),
-            "Web typography export requires SVG");
+        ensure!(
+            path.extension().and_then(|s| s.to_str()) == Some("svg"),
+            "Web typography export requires SVG"
+        );
         let mut embed = self.html_embed(svg_url, alt)?;
         let c = self.web_contract.unwrap();
         let mut export = self.clone();
@@ -114,8 +120,12 @@ impl Figure {
         let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default())?;
         let width_css_px = tree.size().width() as f64;
         embed = embed.replace(
-            &format!("width:{:.8}em", c.layout.width_css_px/c.layout.body_font_css_px),
-            &format!("width:{:.8}em", width_css_px/c.layout.body_font_css_px));
+            &format!(
+                "width:{:.8}em",
+                c.layout.width_css_px / c.layout.body_font_css_px
+            ),
+            &format!("width:{:.8}em", width_css_px / c.layout.body_font_css_px),
+        );
         std::fs::write(path, svg)?;
         std::fs::write(path.with_extension("embed.html"), embed)?;
         Ok(())
@@ -149,21 +159,28 @@ mod tests {
     #[test]
     fn default_web_export_trims_without_enlarging_labels() {
         let mut f = WebLayout::new(640., 16.).unwrap().figure(400.).unwrap();
-        let mut p = crate::Panel::new(crate::Rect::new(30., 20., 100., 50.),
-            crate::Axes::new([0., 1.], [0., 1.], "", ""));
+        let mut p = crate::Panel::new(
+            crate::Rect::new(30., 20., 100., 50.),
+            crate::Axes::new([0., 1.], [0., 1.], "", ""),
+        );
         p.axes_visible = false;
-        p.push(crate::Layer::Line(crate::Line::new(vec![[0., 0.], [1., 1.]], "black")));
+        p.push(crate::Layer::Line(crate::Line::new(
+            vec![[0., 0.], [1., 1.]],
+            "black",
+        )));
         f.panels.push(p);
         let dir = std::env::temp_dir().join(format!("rustplotlib-web-crop-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        f.save_for_web(dir.join("plot.svg"), "plot.svg", "Plot").unwrap();
+        f.save_for_web(dir.join("plot.svg"), "plot.svg", "Plot")
+            .unwrap();
         let svg = std::fs::read_to_string(dir.join("plot.svg")).unwrap();
         let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default()).unwrap();
         let width = tree.size().width() as f64;
         assert!(width < 400.);
         let embed = std::fs::read_to_string(dir.join("plot.embed.html")).unwrap();
-        assert!(embed.contains(&format!("width:{:.8}em", width/16.)));
-        f.save_fixed_for_web(dir.join("fixed.svg"), "fixed.svg", "Plot").unwrap();
+        assert!(embed.contains(&format!("width:{:.8}em", width / 16.)));
+        f.save_fixed_for_web(dir.join("fixed.svg"), "fixed.svg", "Plot")
+            .unwrap();
         let fixed = std::fs::read_to_string(dir.join("fixed.embed.html")).unwrap();
         assert!(fixed.contains("width:40.00000000em"));
         std::fs::remove_dir_all(dir).unwrap();
@@ -172,14 +189,16 @@ mod tests {
     fn css_size_and_relative_embed() {
         let f = WebLayout::new(640., 16.).unwrap().figure(400.).unwrap();
         assert!((f.font_pt - 12.045).abs() < 1e-12);
-        assert!(f
-            .html_embed("plot.svg?a=1&b=2", "A < B")
-            .unwrap()
-            .contains("width:40.00000000em"));
-        assert!(f
-            .html_embed("plot.svg?a=1&b=2", "A < B")
-            .unwrap()
-            .contains("A &lt; B"));
+        assert!(
+            f.html_embed("plot.svg?a=1&b=2", "A < B")
+                .unwrap()
+                .contains("width:40.00000000em")
+        );
+        assert!(
+            f.html_embed("plot.svg?a=1&b=2", "A < B")
+                .unwrap()
+                .contains("A &lt; B")
+        );
         let mobile = WebLayout::new(320., 16.).unwrap().figure(400.).unwrap();
         assert_eq!(f.font_pt, mobile.font_pt);
         assert!(mobile.html_embed("plot.svg", "").is_err());
@@ -187,9 +206,11 @@ mod tests {
     }
     #[test]
     fn rejects_unbound_and_scaled_output() {
-        assert!(Figure::new(IntendedUse::Mobile)
-            .html_embed("plot.svg", "Plot")
-            .is_err());
+        assert!(
+            Figure::new(IntendedUse::Mobile)
+                .html_embed("plot.svg", "Plot")
+                .is_err()
+        );
         let mut f = WebLayout::new(640., 16.).unwrap().figure(400.).unwrap();
         f.width_mm *= 0.5;
         assert!(f.html_embed("plot.svg", "Plot").is_err());

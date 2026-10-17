@@ -22,7 +22,9 @@ fn latex_checks_final_article_dimensions_and_body_font() -> anyhow::Result<()> {
         ("wrong_width", 170., 10, Some("Article linewidth changed")),
         ("wrong_font", 164.6, 11, Some("Article body font changed")),
     ] {
-        let tex = format!("\\documentclass[{font}pt]{{article}}\n\\usepackage[textwidth={width}mm]{{geometry}}\n\\usepackage{{graphicx}}\n\\begin{{document}}\n{include}\n\\end{{document}}\n");
+        let tex = format!(
+            "\\documentclass[{font}pt]{{article}}\n\\usepackage[textwidth={width}mm]{{geometry}}\n\\usepackage{{graphicx}}\n\\begin{{document}}\n{include}\n\\end{{document}}\n"
+        );
         fs::write(dir.join(format!("{name}.tex")), tex)?;
         let output = Command::new("pdflatex")
             .current_dir(&dir)

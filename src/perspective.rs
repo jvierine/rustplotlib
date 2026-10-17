@@ -1,5 +1,5 @@
 //! Metric 3-D perspective projection for native vector scenes.
-use anyhow::{ensure, Result};
+use anyhow::{Result, ensure};
 
 #[derive(Clone, Debug)]
 pub struct PerspectiveCamera {

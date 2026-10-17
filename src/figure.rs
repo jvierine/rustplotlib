@@ -153,8 +153,15 @@ impl Axes {
         self.xscale = scale;
         (self.xticks, self.xminor_ticks) = scale.ticks(self.xlim);
         self.xticklabels = if scale == crate::AxisScale::Log10 {
-            Some(self.xticks.iter().map(|v| format!("$10^{{{:.0}}}$", v.log10())).collect())
-        } else { None };
+            Some(
+                self.xticks
+                    .iter()
+                    .map(|v| format!("$10^{{{:.0}}}$", v.log10()))
+                    .collect(),
+            )
+        } else {
+            None
+        };
         Ok(())
     }
     pub fn set_yscale(&mut self, scale: crate::AxisScale) -> Result<()> {
@@ -162,8 +169,15 @@ impl Axes {
         self.yscale = scale;
         (self.yticks, self.yminor_ticks) = scale.ticks(self.ylim);
         self.yticklabels = if scale == crate::AxisScale::Log10 {
-            Some(self.yticks.iter().map(|v| format!("$10^{{{:.0}}}$", v.log10())).collect())
-        } else { None };
+            Some(
+                self.yticks
+                    .iter()
+                    .map(|v| format!("$10^{{{:.0}}}$", v.log10()))
+                    .collect(),
+            )
+        } else {
+            None
+        };
         Ok(())
     }
 }
@@ -441,22 +455,35 @@ impl Contour {
     pub fn paths(&self, level: f64) -> Vec<Vec<[f64; 2]>> {
         let mut segments = self.segments(level);
         let mut paths = Vec::new();
-        let near = |a: [f64;2], b: [f64;2]| (a[0]-b[0]).abs() < 1e-9 && (a[1]-b[1]).abs() < 1e-9;
+        let near =
+            |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).abs() < 1e-9 && (a[1] - b[1]).abs() < 1e-9;
         while let Some(segment) = segments.pop() {
             let mut path = std::collections::VecDeque::from(segment);
             loop {
                 let head = *path.front().unwrap();
                 let tail = *path.back().unwrap();
                 let found = segments.iter().enumerate().find_map(|(i, s)| {
-                    if near(s[0], tail) { Some((i, false, s[1])) }
-                    else if near(s[1], tail) { Some((i, false, s[0])) }
-                    else if near(s[0], head) { Some((i, true, s[1])) }
-                    else if near(s[1], head) { Some((i, true, s[0])) }
-                    else { None }
+                    if near(s[0], tail) {
+                        Some((i, false, s[1]))
+                    } else if near(s[1], tail) {
+                        Some((i, false, s[0]))
+                    } else if near(s[0], head) {
+                        Some((i, true, s[1]))
+                    } else if near(s[1], head) {
+                        Some((i, true, s[0]))
+                    } else {
+                        None
+                    }
                 });
-                let Some((i, front, point)) = found else { break; };
+                let Some((i, front, point)) = found else {
+                    break;
+                };
                 segments.swap_remove(i);
-                if front { path.push_front(point); } else { path.push_back(point); }
+                if front {
+                    path.push_front(point);
+                } else {
+                    path.push_back(point);
+                }
             }
             paths.push(path.into_iter().collect());
         }
@@ -660,8 +687,14 @@ impl Panel {
         let xs = self.axes.as_ref().map(|a| a.xscale).unwrap_or_default();
         let ys = self.axes.as_ref().map(|a| a.yscale).unwrap_or_default();
         [
-            self.rect.x + (xs.transform(p[0]) - xs.transform(x[0])) / (xs.transform(x[1]) - xs.transform(x[0])) * self.rect.width,
-            self.rect.y + self.rect.height - (ys.transform(p[1]) - ys.transform(y[0])) / (ys.transform(y[1]) - ys.transform(y[0])) * self.rect.height,
+            self.rect.x
+                + (xs.transform(p[0]) - xs.transform(x[0]))
+                    / (xs.transform(x[1]) - xs.transform(x[0]))
+                    * self.rect.width,
+            self.rect.y + self.rect.height
+                - (ys.transform(p[1]) - ys.transform(y[0]))
+                    / (ys.transform(y[1]) - ys.transform(y[0]))
+                    * self.rect.height,
         ]
     }
     /// Convert a data coordinate to figure millimetres, using the same axis
@@ -673,18 +706,29 @@ impl Panel {
     /// Physical stroke footprints for annotation collision checks. Supply
     /// densely sampled curves when the coordinate transformation is nonlinear.
     pub fn stroke_obstacles(&self, line: &Line, clearance_mm: f64) -> Vec<Rect> {
-        let margin = line.width_pt*MM_PER_PT/2.+clearance_mm;
-        line.points.windows(2).filter_map(|p| {
-            let a = self.xy(p[0]); let b = self.xy(p[1]);
-            a.iter().chain(b.iter()).all(|v| v.is_finite()).then(|| Rect::new(
-                a[0].min(b[0])-margin,a[1].min(b[1])-margin,
-                (a[0]-b[0]).abs()+2.*margin,(a[1]-b[1]).abs()+2.*margin))
-        }).collect()
+        let margin = line.width_pt * MM_PER_PT / 2. + clearance_mm;
+        line.points
+            .windows(2)
+            .filter_map(|p| {
+                let a = self.xy(p[0]);
+                let b = self.xy(p[1]);
+                a.iter().chain(b.iter()).all(|v| v.is_finite()).then(|| {
+                    Rect::new(
+                        a[0].min(b[0]) - margin,
+                        a[1].min(b[1]) - margin,
+                        (a[0] - b[0]).abs() + 2. * margin,
+                        (a[1] - b[1]).abs() + 2. * margin,
+                    )
+                })
+            })
+            .collect()
     }
 
     /// Add faint major grid lines without introducing minor-grid clutter.
     pub fn major_grid(&mut self, color: &str, width_pt: f64) {
-        let Some(a) = &self.axes else { return; };
+        let Some(a) = &self.axes else {
+            return;
+        };
         let mut paths = Vec::new();
         for &x in &a.xticks {
             if x > a.xlim[0] && x < a.xlim[1] {
@@ -705,8 +749,10 @@ impl Panel {
         let (x, y) = self.limits();
         let xs = self.axes.as_ref().map(|a| a.xscale).unwrap_or_default();
         let ys = self.axes.as_ref().map(|a| a.yscale).unwrap_or_default();
-        [xs.inverse(xs.transform(x[0]) + u*(xs.transform(x[1])-xs.transform(x[0]))),
-         ys.inverse(ys.transform(y[0]) + v*(ys.transform(y[1])-ys.transform(y[0])))]
+        [
+            xs.inverse(xs.transform(x[0]) + u * (xs.transform(x[1]) - xs.transform(x[0]))),
+            ys.inverse(ys.transform(y[0]) + v * (ys.transform(y[1]) - ys.transform(y[0]))),
+        ]
     }
 }
 #[derive(Clone, Debug)]
@@ -989,9 +1035,21 @@ impl Figure {
                     );
                 }
                 for secondary in a.secondary_x.iter().chain(a.secondary_y.iter()) {
-                    ensure!(secondary.ticks.iter().all(|(x,v)|x.is_finite()&&v.is_finite()),"Non-finite secondary-axis tick");
-                    ensure!(secondary.tick_labels.as_ref().is_none_or(|labels|labels.len()==secondary.ticks.len()
-                        && labels.iter().all(|s|!s.is_empty())),"Secondary tick label count must match tick positions");
+                    ensure!(
+                        secondary
+                            .ticks
+                            .iter()
+                            .all(|(x, v)| x.is_finite() && v.is_finite()),
+                        "Non-finite secondary-axis tick"
+                    );
+                    ensure!(
+                        secondary
+                            .tick_labels
+                            .as_ref()
+                            .is_none_or(|labels| labels.len() == secondary.ticks.len()
+                                && labels.iter().all(|s| !s.is_empty())),
+                        "Secondary tick label count must match tick positions"
+                    );
                 }
             }
             let (x, y) = p.limits();
@@ -1120,11 +1178,22 @@ impl Figure {
                 );
                 if let Some(top) = &a.secondary_x {
                     v.push(top.label.clone());
-                    v.extend(top.ticks.iter().enumerate().map(|(i,(_,v))|tick_label(*v,&top.tick_labels,i)));
+                    v.extend(
+                        top.ticks
+                            .iter()
+                            .enumerate()
+                            .map(|(i, (_, v))| tick_label(*v, &top.tick_labels, i)),
+                    );
                 }
                 if let Some(right) = &a.secondary_y {
                     v.push(right.label.clone());
-                    v.extend(right.ticks.iter().enumerate().map(|(i,(_,v))|tick_label(*v,&right.tick_labels,i)));
+                    v.extend(
+                        right
+                            .ticks
+                            .iter()
+                            .enumerate()
+                            .map(|(i, (_, v))| tick_label(*v, &right.tick_labels, i)),
+                    );
                 }
             }
             v.extend(p.labels.iter().map(|l| l.latex.clone()));
@@ -1265,7 +1334,11 @@ impl Figure {
         Ok(())
     }
 
-    pub(crate) fn legend_occupancy(&self, panel: &Panel, legend: &crate::Legend) -> Result<Vec<bool>> {
+    pub(crate) fn legend_occupancy(
+        &self,
+        panel: &Panel,
+        legend: &crate::Legend,
+    ) -> Result<Vec<bool>> {
         let w = (panel.rect.width * 4.).ceil() as u32;
         let h = (panel.rect.height * 4.).ceil() as u32;
         let mut mask = vec![false; (w * h) as usize];
@@ -1275,7 +1348,9 @@ impl Figure {
                     continue;
                 }
                 let [a, b] = [panel.xy(pair[0]), panel.xy(pair[1])];
-                if !a.iter().chain(&b).all(|v| v.is_finite()) { continue; }
+                if !a.iter().chain(&b).all(|v| v.is_finite()) {
+                    continue;
+                }
                 let steps = ((b[0] - a[0]).hypot(b[1] - a[1]) * 8.).ceil().max(1.) as usize;
                 let radius = (width_pt * MM_PER_PT * 2.).ceil().max(1.) as i32;
                 for i in 0..=steps {
@@ -1309,14 +1384,19 @@ impl Figure {
                         protect_line(&mut mask, &line.points, line.width_pt);
                     }
                     if line.fill.is_some() && line.fill_opacity > 0. {
-                        let polygons: Vec<Vec<[f64; 2]>> = line.points
+                        let polygons: Vec<Vec<[f64; 2]>> = line
+                            .points
                             .split(|p| !p.iter().all(|v| v.is_finite()))
                             .filter(|p| p.len() >= 3)
-                            .map(|p| p.to_vec()).collect();
+                            .map(|p| p.to_vec())
+                            .collect();
                         let values = vec![0.5; polygons.len()];
                         let mesh = PolygonMesh::new(polygons, values, 0)?;
-                        let scale = Scale::new([0., 1.], crate::Normalization::Linear,
-                            crate::ColorMap::new(vec![[0., 0., 0.], [0., 0., 0.]])?)?;
+                        let scale = Scale::new(
+                            [0., 1.],
+                            crate::Normalization::Linear,
+                            crate::ColorMap::new(vec![[0., 0., 0.], [0., 0., 0.]])?,
+                        )?;
                         raster_polygons(&mesh, panel, &scale, 101.6)
                     } else {
                         continue;
@@ -1344,7 +1424,10 @@ impl Figure {
                     let mut img = image::RgbaImage::new(w, h);
                     for y in 0..h {
                         for x in 0..w {
-                            let [px, py] = panel.data_fraction((x as f64 + 0.5)/w as f64, 1.-(y as f64+0.5)/h as f64);
+                            let [px, py] = panel.data_fraction(
+                                (x as f64 + 0.5) / w as f64,
+                                1. - (y as f64 + 0.5) / h as f64,
+                            );
                             let visible = match layer {
                                 Layer::Pcolormesh(f) => {
                                     self.scales[f.scale].map(f.sample(px, py)).is_some()
@@ -1554,13 +1637,27 @@ impl Figure {
                 let axis_start = label_bounds.len();
                 let em = self.font_pt * MM_PER_PT;
                 if a.show_x_axis {
-                    write!(s,"<path d=\"M {} {} H {}\" stroke=\"#444\" stroke-width=\"0.18\" fill=\"none\"/>",r.x,r.y+r.height,r.x+r.width)?;
+                    write!(
+                        s,
+                        "<path d=\"M {} {} H {}\" stroke=\"#444\" stroke-width=\"0.18\" fill=\"none\"/>",
+                        r.x,
+                        r.y + r.height,
+                        r.x + r.width
+                    )?;
                 }
                 if a.show_y_axis {
-                    write!(s,"<path d=\"M {} {} V {}\" stroke=\"#444\" stroke-width=\"0.18\" fill=\"none\"/>",r.x,r.y,r.y+r.height)?;
+                    write!(
+                        s,
+                        "<path d=\"M {} {} V {}\" stroke=\"#444\" stroke-width=\"0.18\" fill=\"none\"/>",
+                        r.x,
+                        r.y,
+                        r.y + r.height
+                    )?;
                 }
                 for (i, v) in a.xticks.iter().enumerate() {
-                    if !a.show_x_axis { continue; }
+                    if !a.show_x_axis {
+                        continue;
+                    }
                     if *v < a.xlim[0] || *v > a.xlim[1] {
                         continue;
                     }
@@ -1582,16 +1679,30 @@ impl Figure {
                     )?;
                 }
                 for &v in &a.xminor_ticks {
-                    if !a.show_x_axis { continue; }
-                    if v < a.xlim[0] || v > a.xlim[1] { continue; }
+                    if !a.show_x_axis {
+                        continue;
+                    }
+                    if v < a.xlim[0] || v > a.xlim[1] {
+                        continue;
+                    }
                     let [x, y] = p.xy([v, a.ylim[0]]);
-                    write!(s, "<path d=\"M {x} {y} v 0.7\" stroke=\"#444\" stroke-width=\"0.15\"/>")?;
+                    write!(
+                        s,
+                        "<path d=\"M {x} {y} v 0.7\" stroke=\"#444\" stroke-width=\"0.15\"/>"
+                    )?;
                 }
                 for &v in &a.yminor_ticks {
-                    if !a.show_y_axis { continue; }
-                    if v < a.ylim[0] || v > a.ylim[1] { continue; }
+                    if !a.show_y_axis {
+                        continue;
+                    }
+                    if v < a.ylim[0] || v > a.ylim[1] {
+                        continue;
+                    }
                     let [x, y] = p.xy([a.xlim[0], v]);
-                    write!(s, "<path d=\"M {x} {y} h -0.7\" stroke=\"#444\" stroke-width=\"0.15\"/>")?;
+                    write!(
+                        s,
+                        "<path d=\"M {x} {y} h -0.7\" stroke=\"#444\" stroke-width=\"0.15\"/>"
+                    )?;
                 }
                 if let Some(top) = &a.secondary_x {
                     write!(
@@ -1601,7 +1712,7 @@ impl Figure {
                         r.y,
                         r.x + r.width
                     )?;
-                    for (i,&(primary, value)) in top.ticks.iter().enumerate() {
+                    for (i, &(primary, value)) in top.ticks.iter().enumerate() {
                         if primary < a.xlim[0] || primary > a.xlim[1] {
                             continue;
                         }
@@ -1614,7 +1725,7 @@ impl Figure {
                         place(
                             &mut s,
                             &glyphs,
-                            &tick_label(value,&top.tick_labels,i),
+                            &tick_label(value, &top.tick_labels, i),
                             x,
                             r.y - 0.95 * em,
                             0.,
@@ -1636,7 +1747,9 @@ impl Figure {
                     )?;
                 }
                 for (i, v) in a.yticks.iter().enumerate() {
-                    if !a.show_y_axis { continue; }
+                    if !a.show_y_axis {
+                        continue;
+                    }
                     if *v < a.ylim[0] || *v > a.ylim[1] {
                         continue;
                     }
@@ -1659,45 +1772,80 @@ impl Figure {
                         &mut label_bounds,
                     )?;
                 }
-                if a.show_x_axis { place(
-                    &mut s,
-                    &glyphs,
-                    &a.xlabel,
-                    r.x + r.width / 2.0,
-                    r.y + r.height + 2.5 * em,
-                    0.0,
-                    "#171717",
-                    &mut serial,
-                    &mut label_bounds,
-                )?; }
-                if a.show_y_axis { place(
-                    &mut s,
-                    &glyphs,
-                    &a.ylabel,
-                    r.x - 3.8 * em,
-                    r.y + r.height / 2.0,
-                    -90.0,
-                    "#171717",
-                    &mut serial,
-                    &mut label_bounds,
-                )?; }
+                if a.show_x_axis {
+                    place(
+                        &mut s,
+                        &glyphs,
+                        &a.xlabel,
+                        r.x + r.width / 2.0,
+                        r.y + r.height + 2.5 * em,
+                        0.0,
+                        "#171717",
+                        &mut serial,
+                        &mut label_bounds,
+                    )?;
+                }
+                if a.show_y_axis {
+                    place(
+                        &mut s,
+                        &glyphs,
+                        &a.ylabel,
+                        r.x - 3.8 * em,
+                        r.y + r.height / 2.0,
+                        -90.0,
+                        "#171717",
+                        &mut serial,
+                        &mut label_bounds,
+                    )?;
+                }
                 if let Some(right) = &a.secondary_y {
-                    let edge = r.x+r.width;
+                    let edge = r.x + r.width;
                     let mut tick_right = edge;
-                    write!(s,"<path d=\"M {edge} {} V {}\" stroke=\"#444\" stroke-width=\"0.18\"/>",r.y,r.y+r.height)?;
-                    for (i,&(primary,value)) in right.ticks.iter().enumerate() {
-                        if primary < a.ylim[0] || primary > a.ylim[1] { continue; }
-                        let [_,y] = p.xy([a.xlim[1],primary]);
-                        write!(s,"<path d=\"M {edge} {y} h 1.2\" stroke=\"#444\" stroke-width=\"0.18\"/>")?;
-                        let text = tick_label(value,&right.tick_labels,i);
-                        let width = glyphs[&text].width_pt*MM_PER_PT;
-                        tick_right = tick_right.max(edge + 0.6*em + width);
-                        place(&mut s,&glyphs,&text,edge+0.6*em+width/2.,y,0.,"#555555",&mut serial,&mut label_bounds)?;
+                    write!(
+                        s,
+                        "<path d=\"M {edge} {} V {}\" stroke=\"#444\" stroke-width=\"0.18\"/>",
+                        r.y,
+                        r.y + r.height
+                    )?;
+                    for (i, &(primary, value)) in right.ticks.iter().enumerate() {
+                        if primary < a.ylim[0] || primary > a.ylim[1] {
+                            continue;
+                        }
+                        let [_, y] = p.xy([a.xlim[1], primary]);
+                        write!(
+                            s,
+                            "<path d=\"M {edge} {y} h 1.2\" stroke=\"#444\" stroke-width=\"0.18\"/>"
+                        )?;
+                        let text = tick_label(value, &right.tick_labels, i);
+                        let width = glyphs[&text].width_pt * MM_PER_PT;
+                        tick_right = tick_right.max(edge + 0.6 * em + width);
+                        place(
+                            &mut s,
+                            &glyphs,
+                            &text,
+                            edge + 0.6 * em + width / 2.,
+                            y,
+                            0.,
+                            "#555555",
+                            &mut serial,
+                            &mut label_bounds,
+                        )?;
                     }
-                    let half_label = glyphs.get(&right.label)
-                        .map_or(0., |glyph| glyph.height_pt*MM_PER_PT/2.);
-                    let label_x = (edge+3.8*em).max(tick_right+0.6*em+half_label);
-                    place(&mut s,&glyphs,&right.label,label_x,r.y+r.height/2.,-90.,"#555555",&mut serial,&mut label_bounds)?;
+                    let half_label = glyphs
+                        .get(&right.label)
+                        .map_or(0., |glyph| glyph.height_pt * MM_PER_PT / 2.);
+                    let label_x = (edge + 3.8 * em).max(tick_right + 0.6 * em + half_label);
+                    place(
+                        &mut s,
+                        &glyphs,
+                        &right.label,
+                        label_x,
+                        r.y + r.height / 2.,
+                        -90.,
+                        "#555555",
+                        &mut serial,
+                        &mut label_bounds,
+                    )?;
                 }
                 axis_bounds.extend(label_bounds[axis_start..].iter().cloned());
             }
@@ -1775,7 +1923,9 @@ impl Figure {
             }
             let em = self.font_pt * MM_PER_PT;
             for v in &b.ticks {
-                if *v < sc.limits[0] || *v > sc.limits[1] { continue; }
+                if *v < sc.limits[0] || *v > sc.limits[1] {
+                    continue;
+                }
                 let [a, z] = sc.limits.map(|x| sc.transform(x));
                 let t = (sc.transform(*v) - a) / (z - a);
                 let (x, y) = if b.horizontal {
@@ -1893,7 +2043,10 @@ impl Figure {
         let mut img = image::RgbaImage::new(w, h);
         for j in 0..h {
             for i in 0..w {
-                let [xx, yy] = p.data_fraction((i as f64+0.5)/w as f64, 1.-(j as f64+0.5)/h as f64);
+                let [xx, yy] = p.data_fraction(
+                    (i as f64 + 0.5) / w as f64,
+                    1. - (j as f64 + 0.5) / h as f64,
+                );
                 img.put_pixel(i, j, image::Rgba(sample(xx, yy).unwrap_or([0, 0, 0, 0])));
             }
         }
@@ -2040,24 +2193,43 @@ fn rgb(c: [u8; 4]) -> String {
 }
 fn place_background(s: &mut String, glyphs: &BTreeMap<String, Glyph>, label: &Label) -> Result<()> {
     if let Some(anchor) = label.leader {
-        let glyph=&glyphs[&label.latex];
-        let angle=label.rotation.to_radians();
-        let dx=anchor[0]-label.x;let dy=anchor[1]-label.y;
-        let local=[dx*angle.cos()+dy*angle.sin(),-dx*angle.sin()+dy*angle.cos()];
-        let half=[glyph.width_pt*MM_PER_PT/2.+0.6,glyph.height_pt*MM_PER_PT/2.+0.6];
-        let ratio=(local[0].abs()/half[0]).max(local[1].abs()/half[1]);
-        let t=1./ratio.max(1.);
-        let end=[label.x+t*dx,label.y+t*dy];
-        write!(s, "<path data-role=\"label-leader\" d=\"M {} {} L {} {}\" fill=\"none\" stroke=\"{}\" stroke-width=\"0.15\"/>",
-            anchor[0], anchor[1], end[0], end[1], label.color)?;
+        let glyph = &glyphs[&label.latex];
+        let angle = label.rotation.to_radians();
+        let dx = anchor[0] - label.x;
+        let dy = anchor[1] - label.y;
+        let local = [
+            dx * angle.cos() + dy * angle.sin(),
+            -dx * angle.sin() + dy * angle.cos(),
+        ];
+        let half = [
+            glyph.width_pt * MM_PER_PT / 2. + 0.6,
+            glyph.height_pt * MM_PER_PT / 2. + 0.6,
+        ];
+        let ratio = (local[0].abs() / half[0]).max(local[1].abs() / half[1]);
+        let t = 1. / ratio.max(1.);
+        let end = [label.x + t * dx, label.y + t * dy];
+        write!(
+            s,
+            "<path data-role=\"label-leader\" d=\"M {} {} L {} {}\" fill=\"none\" stroke=\"{}\" stroke-width=\"0.15\"/>",
+            anchor[0], anchor[1], end[0], end[1], label.color
+        )?;
     }
     if let Some(color) = &label.background {
-        if label.latex.is_empty() { return Ok(()); }
+        if label.latex.is_empty() {
+            return Ok(());
+        }
         let glyph = &glyphs[&label.latex];
-        let w = glyph.width_pt*MM_PER_PT+2.*label.padding_mm;
-        let h = glyph.height_pt*MM_PER_PT+2.*label.padding_mm;
-        write!(s, "<rect data-role=\"label-backing\" x=\"{}\" y=\"{}\" width=\"{w}\" height=\"{h}\" transform=\"rotate({} {} {})\" fill=\"{color}\"/>",
-            label.x-w/2., label.y-h/2., label.rotation, label.x, label.y)?;
+        let w = glyph.width_pt * MM_PER_PT + 2. * label.padding_mm;
+        let h = glyph.height_pt * MM_PER_PT + 2. * label.padding_mm;
+        write!(
+            s,
+            "<rect data-role=\"label-backing\" x=\"{}\" y=\"{}\" width=\"{w}\" height=\"{h}\" transform=\"rotate({} {} {})\" fill=\"{color}\"/>",
+            label.x - w / 2.,
+            label.y - h / 2.,
+            label.rotation,
+            label.x,
+            label.y
+        )?;
     }
     Ok(())
 }
@@ -2165,45 +2337,77 @@ mod tests {
     use crate::{ColorMap, Legend, LegendEntry, Normalization};
     #[test]
     fn secondary_axis_reserves_measured_negative_tick_width() {
-        let mut f = crate::ArticleLayout::new(184., 10.).unwrap().figure(1., 100.).unwrap();
+        let mut f = crate::ArticleLayout::new(184., 10.)
+            .unwrap()
+            .figure(1., 100.)
+            .unwrap();
         let mut axes = Axes::new([0., 1.], [-1., 1.], "Time", "Residual");
-        axes.secondary_y = Some(SecondaryAxis::new(
-            r"Path-rate residual ($\mathrm{m\,s^{-1}}$)",
-            vec![-1000., -500., 0., 500., 1000.], |v| v/1000.).unwrap());
-        f.panels.push(Panel::new(Rect::new(20., 15., 130., 60.), axes));
+        axes.secondary_y = Some(
+            SecondaryAxis::new(
+                r"Path-rate residual ($\mathrm{m\,s^{-1}}$)",
+                vec![-1000., -500., 0., 500., 1000.],
+                |v| v / 1000.,
+            )
+            .unwrap(),
+        );
+        f.panels
+            .push(Panel::new(Rect::new(20., 15., 130., 60.), axes));
         assert!(f.svg().is_ok());
     }
     #[test]
     fn native_secondary_y_and_clock_labels_are_validated() {
-        let mut f=Figure::new(IntendedUse::ArticleWide);
-        let mut a=Axes::new([12.,24.],[0.,10.],"UTC","Counts");
-        a.secondary_x=Some(SecondaryAxis::new("Solar",vec![19.,21.],|v|v-7.).unwrap());
-        a.secondary_x.as_mut().unwrap().tick_labels=Some(vec!["19:00".into(),"21:00".into()]);
-        a.secondary_y=Some(SecondaryAxis::new("Speed",vec![20.,40.],|v|v/5.).unwrap());
-        a.show_y_axis=false;
-        f.panels.push(Panel::new(Rect::new(20.,20.,100.,50.),a));
+        let mut f = Figure::new(IntendedUse::ArticleWide);
+        let mut a = Axes::new([12., 24.], [0., 10.], "UTC", "Counts");
+        a.secondary_x = Some(SecondaryAxis::new("Solar", vec![19., 21.], |v| v - 7.).unwrap());
+        a.secondary_x.as_mut().unwrap().tick_labels = Some(vec!["19:00".into(), "21:00".into()]);
+        a.secondary_y = Some(SecondaryAxis::new("Speed", vec![20., 40.], |v| v / 5.).unwrap());
+        a.show_y_axis = false;
+        f.panels.push(Panel::new(Rect::new(20., 20., 100., 50.), a));
         assert!(f.validate().is_ok());
         assert!(f.all_labels().contains(&"19:00".into()));
         assert!(f.all_labels().contains(&"Speed".into()));
-        f.panels[0].axes.as_mut().unwrap().secondary_x.as_mut().unwrap().tick_labels=Some(vec![]);
+        f.panels[0]
+            .axes
+            .as_mut()
+            .unwrap()
+            .secondary_x
+            .as_mut()
+            .unwrap()
+            .tick_labels = Some(vec![]);
         assert!(f.validate().is_err());
     }
     #[test]
     fn native_contour_paths_preserve_all_segments() {
-        let c = Contour::new(vec![-1.,0.,1.],vec![-1.,0.,1.],
-            vec![-2.,-1.,0.,-1.,0.,1.,0.,1.,2.],vec![-0.5,0.5],0,false).unwrap();
+        let c = Contour::new(
+            vec![-1., 0., 1.],
+            vec![-1., 0., 1.],
+            vec![-2., -1., 0., -1., 0., 1., 0., 1., 2.],
+            vec![-0.5, 0.5],
+            0,
+            false,
+        )
+        .unwrap();
         let paths = c.paths(0.5);
-        assert_eq!(paths.iter().map(|p| p.len()-1).sum::<usize>(),c.segments(0.5).len());
-        assert_eq!(paths.len(),1);
+        assert_eq!(
+            paths.iter().map(|p| p.len() - 1).sum::<usize>(),
+            c.segments(0.5).len()
+        );
+        assert_eq!(paths.len(), 1);
         for p in paths.into_iter().flatten() {
-            assert!((p[0]+p[1]-0.5).abs() < 1e-12);
+            assert!((p[0] + p[1] - 0.5).abs() < 1e-12);
         }
     }
     #[test]
     fn dense_native_colourbar_uses_one_texture_not_pdf_stitching() {
         let mut f = Figure::new(IntendedUse::ArticleWide);
-        let scale = f.scale(Scale::new([15.,71.],Normalization::Linear,ColorMap::turbo()).unwrap());
-        f.colorbars.push(Colorbar::new(Rect::new(20.,20.,3.,50.),scale,"Speed",vec![20.,40.,60.]));
+        let scale =
+            f.scale(Scale::new([15., 71.], Normalization::Linear, ColorMap::turbo()).unwrap());
+        f.colorbars.push(Colorbar::new(
+            Rect::new(20., 20., 3., 50.),
+            scale,
+            "Speed",
+            vec![20., 40., 60.],
+        ));
         let svg = f.svg().unwrap();
         assert!(svg.contains("data:image/png;base64,"));
         assert!(!svg.contains("linearGradient"));
@@ -2215,8 +2419,8 @@ mod tests {
         axes.set_yscale(crate::AxisScale::Log10).unwrap();
         let p = Panel::new(Rect::new(0., 0., 90., 90.), axes);
         assert_eq!(p.xy([10., 100.]), [30., 30.]);
-        let sample = p.data_fraction(1./3., 2./3.);
-        assert!((sample[0]-10.).abs()<1e-10 && (sample[1]-100.).abs()<1e-10);
+        let sample = p.data_fraction(1. / 3., 2. / 3.);
+        assert!((sample[0] - 10.).abs() < 1e-10 && (sample[1] - 100.).abs() < 1e-10);
     }
     #[test]
     fn polygon_cells_preserve_coverage_masks_and_winding() {
@@ -2333,16 +2537,27 @@ mod tests {
     fn default_legend_avoids_scatter_and_errors_but_not_grid() {
         use crate::{Legend, LegendEntry};
         let f = Figure::new(IntendedUse::ArticleWide);
-        let mut p = Panel::new(Rect::new(10., 10., 40., 40.),
-            Axes::new([0., 1.], [0., 1.], "", ""));
+        let mut p = Panel::new(
+            Rect::new(10., 10., 40., 40.),
+            Axes::new([0., 1.], [0., 1.], "", ""),
+        );
         p.major_grid("#dddddd", 0.4);
         let legend = Legend::new(vec![LegendEntry::circle("Data", "green")]);
         assert!(legend.avoid_data && legend.avoid_layers.is_empty());
         assert!(f.legend_occupancy(&p, &legend).unwrap().iter().all(|v| !v));
         let scale = Scale::new([0., 1.], Normalization::Linear, ColorMap::diverging()).unwrap();
-        p.scatter_colored(&[[0.8, 0.8]], &[0.5], &scale, 5., 1., "none").unwrap();
-        p.errorbars(&[[0.8, 0.8]], Some(&[[0.55, 0.95]]),
-            Some(&[[0.65, 0.95]]), "green", 1., 3., 1.).unwrap();
+        p.scatter_colored(&[[0.8, 0.8]], &[0.5], &scale, 5., 1., "none")
+            .unwrap();
+        p.errorbars(
+            &[[0.8, 0.8]],
+            Some(&[[0.55, 0.95]]),
+            Some(&[[0.65, 0.95]]),
+            "green",
+            1.,
+            3.,
+            1.,
+        )
+        .unwrap();
         let mask = f.legend_occupancy(&p, &legend).unwrap();
         assert!(mask[32 * 160 + 128], "Scatter centre must be protected");
         assert!(mask[32 * 160 + 96], "Errorbar stem must be protected");
@@ -2350,7 +2565,7 @@ mod tests {
             mask.iter().enumerate().any(|(i, &value)| {
                 let x = 10. + (i % 160) as f64 / 4.;
                 let y = 10. + (i / 160) as f64 / 4.;
-                value && x >= r.x && x <= r.x+r.width && y >= r.y && y <= r.y+r.height
+                value && x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height
             })
         };
         let preferred = Rect::new(33., 12., 15., 9.);
@@ -2407,8 +2622,10 @@ mod tests {
     #[test]
     fn filled_vector_path_preserves_transparency() {
         let mut f = Figure::new(IntendedUse::ArticleWide);
-        let mut p = Panel::new(Rect::new(10., 10., 40., 40.),
-            Axes::new([0., 1.], [0., 1.], "", ""));
+        let mut p = Panel::new(
+            Rect::new(10., 10., 40., 40.),
+            Axes::new([0., 1.], [0., 1.], "", ""),
+        );
         p.axes_visible = false;
         let mut band = Line::new(vec![[0., 0.], [1., 0.], [1., 1.], [0., 0.]], "#123456");
         band.fill = Some("#abcdef".into());

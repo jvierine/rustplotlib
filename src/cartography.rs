@@ -6,9 +6,17 @@ use crate::Line;
 pub enum Projection {
     /// Equal-area full-sky projection. West-positive supports astronomical
     /// longitude displays without modifying the input scientific coordinates.
-    Hammer { central_longitude: f64, west_positive: bool },
-    Equirectangular { central_longitude: f64 },
-    Orthographic { longitude: f64, latitude: f64 },
+    Hammer {
+        central_longitude: f64,
+        west_positive: bool,
+    },
+    Equirectangular {
+        central_longitude: f64,
+    },
+    Orthographic {
+        longitude: f64,
+        latitude: f64,
+    },
 }
 impl Projection {
     pub fn project(self, lonlat: [f64; 2]) -> Option<[f64; 2]> {
@@ -17,16 +25,25 @@ impl Projection {
             return None;
         }
         match self {
-            Self::Hammer { central_longitude, west_positive } => {
-                let raw = lon-central_longitude;
-                let mut d = (raw+180.).rem_euclid(360.)-180.;
-                if d == -180. && raw > 0. { d = 180.; }
-                if west_positive { d = -d; }
-                let a = d.to_radians()/2.;
+            Self::Hammer {
+                central_longitude,
+                west_positive,
+            } => {
+                let raw = lon - central_longitude;
+                let mut d = (raw + 180.).rem_euclid(360.) - 180.;
+                if d == -180. && raw > 0. {
+                    d = 180.;
+                }
+                if west_positive {
+                    d = -d;
+                }
+                let a = d.to_radians() / 2.;
                 let p = lat.to_radians();
-                let denominator = (1.+p.cos()*a.cos()).sqrt();
-                Some([2.*2_f64.sqrt()*p.cos()*a.sin()/denominator,
-                    2_f64.sqrt()*p.sin()/denominator])
+                let denominator = (1. + p.cos() * a.cos()).sqrt();
+                Some([
+                    2. * 2_f64.sqrt() * p.cos() * a.sin() / denominator,
+                    2_f64.sqrt() * p.sin() / denominator,
+                ])
             }
             Self::Equirectangular { central_longitude } => Some([
                 (lon - central_longitude + 180.0).rem_euclid(360.0) - 180.0,
@@ -53,13 +70,22 @@ impl Projection {
             return None;
         }
         match self {
-            Self::Hammer { central_longitude, west_positive } => {
-                if x*x/8.+y*y/2. > 1.+1e-12 { return None; }
-                let z = (1.-x*x/16.-y*y/4.).max(0.).sqrt();
-                let mut d = 2.*(z*x).atan2(2.*(2.*z*z-1.));
-                if west_positive { d = -d; }
-                Some([(central_longitude+d.to_degrees()).rem_euclid(360.),
-                    (z*y).clamp(-1.,1.).asin().to_degrees()])
+            Self::Hammer {
+                central_longitude,
+                west_positive,
+            } => {
+                if x * x / 8. + y * y / 2. > 1. + 1e-12 {
+                    return None;
+                }
+                let z = (1. - x * x / 16. - y * y / 4.).max(0.).sqrt();
+                let mut d = 2. * (z * x).atan2(2. * (2. * z * z - 1.));
+                if west_positive {
+                    d = -d;
+                }
+                Some([
+                    (central_longitude + d.to_degrees()).rem_euclid(360.),
+                    (z * y).clamp(-1., 1.).asin().to_degrees(),
+                ])
             }
             Self::Equirectangular { central_longitude } => {
                 (y.abs() <= 90.0).then_some([x + central_longitude, y])
@@ -101,9 +127,15 @@ impl Projection {
                 let t = k as f64 / n as f64;
                 match self.project([a[0] + dl * t, a[1] + (b[1] - a[1]) * t]) {
                     Some(p) => {
-                        if let Self::Hammer { central_longitude, .. } = self {
-                            let longitude = (a[0]+dl*t-central_longitude+180.).rem_euclid(360.)-180.;
-                            if previous_longitude.is_some_and(|last| (longitude-last).abs() > 180.) {
+                        if let Self::Hammer {
+                            central_longitude, ..
+                        } = self
+                        {
+                            let longitude =
+                                (a[0] + dl * t - central_longitude + 180.).rem_euclid(360.) - 180.;
+                            if previous_longitude
+                                .is_some_and(|last| (longitude - last).abs() > 180.)
+                            {
                                 points.push([f64::NAN; 2]);
                             }
                             previous_longitude = Some(longitude);
@@ -146,27 +178,55 @@ impl Projection {
     /// A full parallel with the seam at the projection's own antimeridian.
     pub fn parallel(self, latitude: f64, color: &str) -> Line {
         let center = match self {
-            Self::Hammer { central_longitude, .. } | Self::Equirectangular { central_longitude } => central_longitude,
+            Self::Hammer {
+                central_longitude, ..
+            }
+            | Self::Equirectangular { central_longitude } => central_longitude,
             Self::Orthographic { longitude, .. } => longitude,
         };
-        self.line(&(0..=1440).map(|i| [center-180.+i as f64/4., latitude]).collect::<Vec<_>>(), color)
+        self.line(
+            &(0..=1440)
+                .map(|i| [center - 180. + i as f64 / 4., latitude])
+                .collect::<Vec<_>>(),
+            color,
+        )
     }
 
     pub fn meridian(self, longitude: f64, color: &str) -> Line {
-        self.line(&[[longitude,-90.],[longitude,90.]], color)
+        self.line(&[[longitude, -90.], [longitude, 90.]], color)
     }
 
     /// Native projection frame; no external plotting-library path input.
     pub fn boundary(self, color: &str) -> Line {
         match self {
-            Self::Hammer { .. } => Line::new((0..=1440).map(|i| {
-                let a = i as f64*std::f64::consts::TAU/1440.;
-                [2.*2_f64.sqrt()*a.cos(), 2_f64.sqrt()*a.sin()]
-            }).collect(), color),
-            Self::Orthographic { .. } => Line::new((0..=1440).map(|i| {
-                let a = i as f64*std::f64::consts::TAU/1440.; [a.cos(),a.sin()]
-            }).collect(), color),
-            Self::Equirectangular { .. } => Line::new(vec![[-180.,-90.],[180.,-90.],[180.,90.],[-180.,90.],[-180.,-90.]], color),
+            Self::Hammer { .. } => Line::new(
+                (0..=1440)
+                    .map(|i| {
+                        let a = i as f64 * std::f64::consts::TAU / 1440.;
+                        [2. * 2_f64.sqrt() * a.cos(), 2_f64.sqrt() * a.sin()]
+                    })
+                    .collect(),
+                color,
+            ),
+            Self::Orthographic { .. } => Line::new(
+                (0..=1440)
+                    .map(|i| {
+                        let a = i as f64 * std::f64::consts::TAU / 1440.;
+                        [a.cos(), a.sin()]
+                    })
+                    .collect(),
+                color,
+            ),
+            Self::Equirectangular { .. } => Line::new(
+                vec![
+                    [-180., -90.],
+                    [180., -90.],
+                    [180., 90.],
+                    [-180., 90.],
+                    [-180., -90.],
+                ],
+                color,
+            ),
         }
     }
 }
@@ -175,22 +235,25 @@ mod tests {
     use super::*;
     #[test]
     fn hammer_round_trip_orientation_and_boundary() {
-        let p = Projection::Hammer {central_longitude:270.,west_positive:true};
-        for longitude in [0.,60.,90.,120.,180.,240.,270.,300.,359.] {
-            for latitude in [-85.,-45.,0.,45.,85.] {
-                let xy = p.project([longitude,latitude]).unwrap();
-                assert!(xy[0]*xy[0]/8.+xy[1]*xy[1]/2. <= 1.+1e-12);
+        let p = Projection::Hammer {
+            central_longitude: 270.,
+            west_positive: true,
+        };
+        for longitude in [0., 60., 90., 120., 180., 240., 270., 300., 359.] {
+            for latitude in [-85., -45., 0., 45., 85.] {
+                let xy = p.project([longitude, latitude]).unwrap();
+                assert!(xy[0] * xy[0] / 8. + xy[1] * xy[1] / 2. <= 1. + 1e-12);
                 let q = p.inverse(xy).unwrap();
-                let error = (q[0]-longitude+180.).rem_euclid(360.)-180.;
-                assert!(error.abs() < 1e-9 && (q[1]-latitude).abs() < 1e-9);
+                let error = (q[0] - longitude + 180.).rem_euclid(360.) - 180.;
+                assert!(error.abs() < 1e-9 && (q[1] - latitude).abs() < 1e-9);
             }
         }
-        assert!(p.project([0.,0.]).unwrap()[0] < 0.);
-        assert_eq!(p.project([270.,0.]).unwrap(),[0.,0.]);
-        assert!(p.project([180.,0.]).unwrap()[0] > 0.);
-        assert!(p.inverse([3.,0.]).is_none());
+        assert!(p.project([0., 0.]).unwrap()[0] < 0.);
+        assert_eq!(p.project([270., 0.]).unwrap(), [0., 0.]);
+        assert!(p.project([180., 0.]).unwrap()[0] > 0.);
+        assert!(p.inverse([3., 0.]).is_none());
         for point in p.boundary("black").points {
-            assert!((point[0]*point[0]/8.+point[1]*point[1]/2.-1.).abs() < 1e-12);
+            assert!((point[0] * point[0] / 8. + point[1] * point[1] / 2. - 1.).abs() < 1e-12);
         }
     }
     #[test]
