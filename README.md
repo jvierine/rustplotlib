@@ -39,8 +39,10 @@ body size. The inclusion checks the manuscript's `\linewidth` and normal font;
 changed manuscript settings require regeneration instead of silently shrinking
 labels. Paste the snippet into the figure environment (or input it) without
 `\resizebox`, `\scalebox`, or another scaling wrapper. These external transforms
-cannot be detected by the Rust library. Fixed article exports deliberately
-reject tight cropping, width overrides and font overrides. Generic `IntendedUse`
+cannot be detected by the Rust library. Article exports trim blank outer margins
+by default and include the cropped PDF at its exact physical size, preserving
+body-sized labels. `save_fixed_for_article` explicitly retains the full design
+canvas. Width overrides and font overrides remain rejected. Generic `IntendedUse`
 presets remain available for unbound plots and non-publication output.
 
 For web pages, use `WebLayout::new(container_css_px, body_font_css_px)` and
@@ -49,6 +51,9 @@ labels follow the surrounding CSS font. A narrow container scrolls instead of
 silently shrinking the plot. For responsive designs, render separate layouts
 at the target widths; the [web typography example](examples/web_typography.rs)
 demonstrates desktop/mobile selection while retaining the same label size.
+Web exports also trim blank outer margins by default and update the embed width
+without enlarging the labels. Use `save_fixed_for_web` when fixed animation
+frames or deliberate whitespace are needed.
 
 ## Scientific examples
 
@@ -136,7 +141,7 @@ See [the API notes](docs/API.md) for coordinates, normalization and embedding.
 [Live gallery](https://jvierine.github.io/rustplotlib/gallery/index.html) · [Examples](gallery/README.md): KHI, HEIMDALL maps, spherical cutaways,
 3-D functions and Dimant–Oppenheim density.
 
-Scientific exports crop to visible content by default with 2 mm padding (`Figure::tight_export`, `Figure::export_padding_mm`). Set `tight_export=false` for a fixed page. Surface geometry fills its panel by default (`Surface::fit_to_view`); disable it to retain the unit-cube camera framing. HEIMDALL Scientific PNG exports the WebGL figure and labelled colour bar without page UI.
+Exports crop to visible content by default with 1 mm padding (`Figure::tight_export`, `Figure::export_padding_mm`). Article and web export helpers preserve physical/CSS typography when trimming. For deliberate whitespace, use `save_fixed_for_article` or `save_fixed_for_web`; unbound figures can set `tight_export=false`. Surface geometry fills its panel by default (`Surface::fit_to_view`); disable it to retain the unit-cube camera framing. HEIMDALL Scientific PNG exports the WebGL figure and labelled colour bar without page UI.
 
 ### HDF5 simulation rendering
 

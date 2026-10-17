@@ -102,6 +102,47 @@ impl ArticleContract {
 }
 
 impl Figure {
+    /// Default publication export: tight ink bounds, no typography rescaling.
+    #[cfg(feature = "export")]
+    pub fn save_for_article(
+        &self,
+        path: impl AsRef<std::path::Path>,
+        pdf_path_in_article: &str,
+    ) -> Result<()> {
+        self.save_trimmed_for_article(path, pdf_path_in_article)
+    }
+
+    /// Trim outer whitespace while preserving physical typography. The companion
+    /// includes the cropped width in millimetres, never scaled to fill linewidth.
+    #[cfg(feature = "export")]
+    pub fn save_trimmed_for_article(
+        &self,
+        path: impl AsRef<std::path::Path>,
+        pdf_path_in_article: &str,
+    ) -> Result<()> {
+        let path = path.as_ref();
+        ensure!(path.extension().and_then(|s| s.to_str()) == Some("pdf"),
+            "Article export requires PDF");
+        let mut inclusion = self.latex_include(pdf_path_in_article)?;
+        let mut export = self.clone();
+        export.article_contract = None;
+        export.tight_export = true;
+        let svg = export.tight_svg(&self.svg()?)?;
+        let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default())?;
+        let width_mm = tree.size().width() as f64 * 25.4 / 96.;
+        inclusion = inclusion.replace(
+            &format!("width={:.6}mm", self.width_mm),
+            &format!("width={width_mm:.6}mm"));
+        inclusion = inclusion.replace(
+            &format!("final width {:.6} mm", self.width_mm),
+            &format!("final width {width_mm:.6} mm"));
+        for extension in ["pdf", "png", "svg"] {
+            export.save(path.with_extension(extension))?;
+        }
+        std::fs::write(path.with_extension("include.tex"), inclusion)?;
+        Ok(())
+    }
+
     /// Checked LaTeX inclusion at the final physical size. Fails at TeX compile
     /// time if the surrounding article width or normal font size has changed.
     /// Do not wrap the result in scalebox/resizebox or another scaled container.
@@ -143,10 +184,10 @@ impl Figure {
         ))
     }
 
-    /// Export the PDF and a `.include.tex` companion containing the checked
-    /// inclusion. `pdf_path_in_article` is relative to the manuscript root.
+    /// Explicitly retain the complete design canvas, including blank margins.
+    /// Use for fixed-size frames or when whitespace is intentionally requested.
     #[cfg(feature = "export")]
-    pub fn save_for_article(
+    pub fn save_fixed_for_article(
         &self,
         path: impl AsRef<std::path::Path>,
         pdf_path_in_article: &str,
@@ -166,6 +207,34 @@ impl Figure {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "export")]
+    #[test]
+    fn trimmed_article_export_never_rescales_typography() {
+        let mut f = ArticleLayout::new(184., 10.).unwrap().figure(1., 100.).unwrap();
+        let mut panel = crate::Panel::new(
+            crate::Rect::new(30., 20., 100., 50.),
+            crate::Axes::new([0., 1.], [0., 1.], "", ""));
+        panel.axes_visible = false;
+        panel.push(crate::Layer::Line(crate::Line::new(vec![[0., 0.], [1., 1.]], "black")));
+        f.panels.push(panel);
+        let dir = std::env::temp_dir().join(format!("rustplotlib-article-crop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        f.save_for_article(dir.join("figure.pdf"), "figure.pdf").unwrap();
+        let svg = std::fs::read_to_string(dir.join("figure.svg")).unwrap();
+        let include = std::fs::read_to_string(dir.join("figure.include.tex")).unwrap();
+        let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default()).unwrap();
+        let width = tree.size().width() as f64 * 25.4 / 96.;
+        assert!(width > 100. && width < 104.);
+        assert!(include.contains(&format!("width={width:.6}mm")));
+        assert!(include.contains("body/label font 10.000000 TeX pt"));
+        assert_eq!(f.font_pt, 10.);
+        assert_eq!(f.width_mm, 184.);
+        assert!(!f.tight_export);
+        f.save_fixed_for_article(dir.join("fixed.pdf"), "fixed.pdf").unwrap();
+        assert!(std::fs::read_to_string(dir.join("fixed.include.tex")).unwrap()
+            .contains("width=184.000000mm"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn narrower_canvas_keeps_body_sized_text() {
         let article = ArticleLayout::new(164.6, 10.).unwrap();

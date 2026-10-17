@@ -103,6 +103,34 @@ impl Figure {
         alt: &str,
     ) -> Result<()> {
         let path = path.as_ref();
+        ensure!(path.extension().and_then(|s| s.to_str()) == Some("svg"),
+            "Web typography export requires SVG");
+        let mut embed = self.html_embed(svg_url, alt)?;
+        let c = self.web_contract.unwrap();
+        let mut export = self.clone();
+        export.web_contract = None;
+        export.tight_export = true;
+        let svg = export.tight_svg(&self.svg()?)?;
+        let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default())?;
+        let width_css_px = tree.size().width() as f64;
+        embed = embed.replace(
+            &format!("width:{:.8}em", c.layout.width_css_px/c.layout.body_font_css_px),
+            &format!("width:{:.8}em", width_css_px/c.layout.body_font_css_px));
+        std::fs::write(path, svg)?;
+        std::fs::write(path.with_extension("embed.html"), embed)?;
+        Ok(())
+    }
+
+    /// Explicit fixed-canvas export for stable animation frames or requested
+    /// whitespace. Ordinary web exports trim outer margins by default.
+    #[cfg(feature = "export")]
+    pub fn save_fixed_for_web(
+        &self,
+        path: impl AsRef<std::path::Path>,
+        svg_url: &str,
+        alt: &str,
+    ) -> Result<()> {
+        let path = path.as_ref();
         ensure!(
             path.extension().and_then(|s| s.to_str()) == Some("svg"),
             "Web typography export requires SVG"
@@ -117,6 +145,29 @@ impl Figure {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "export")]
+    #[test]
+    fn default_web_export_trims_without_enlarging_labels() {
+        let mut f = WebLayout::new(640., 16.).unwrap().figure(400.).unwrap();
+        let mut p = crate::Panel::new(crate::Rect::new(30., 20., 100., 50.),
+            crate::Axes::new([0., 1.], [0., 1.], "", ""));
+        p.axes_visible = false;
+        p.push(crate::Layer::Line(crate::Line::new(vec![[0., 0.], [1., 1.]], "black")));
+        f.panels.push(p);
+        let dir = std::env::temp_dir().join(format!("rustplotlib-web-crop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        f.save_for_web(dir.join("plot.svg"), "plot.svg", "Plot").unwrap();
+        let svg = std::fs::read_to_string(dir.join("plot.svg")).unwrap();
+        let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default()).unwrap();
+        let width = tree.size().width() as f64;
+        assert!(width < 400.);
+        let embed = std::fs::read_to_string(dir.join("plot.embed.html")).unwrap();
+        assert!(embed.contains(&format!("width:{:.8}em", width/16.)));
+        f.save_fixed_for_web(dir.join("fixed.svg"), "fixed.svg", "Plot").unwrap();
+        let fixed = std::fs::read_to_string(dir.join("fixed.embed.html")).unwrap();
+        assert!(fixed.contains("width:40.00000000em"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn css_size_and_relative_embed() {
         let f = WebLayout::new(640., 16.).unwrap().figure(400.).unwrap();

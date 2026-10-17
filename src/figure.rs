@@ -912,7 +912,7 @@ impl Figure {
             raster_dpi: 300.0,
             check_label_bounds: true,
             tight_export: true,
-            export_padding_mm: 2.0,
+            export_padding_mm: 1.0,
             check_label_overlap: true,
             check_label_geometry: true,
             auto_colorbar_layout: true,
@@ -1683,6 +1683,7 @@ impl Figure {
                 )?; }
                 if let Some(right) = &a.secondary_y {
                     let edge = r.x+r.width;
+                    let mut tick_right = edge;
                     write!(s,"<path d=\"M {edge} {} V {}\" stroke=\"#444\" stroke-width=\"0.18\"/>",r.y,r.y+r.height)?;
                     for (i,&(primary,value)) in right.ticks.iter().enumerate() {
                         if primary < a.ylim[0] || primary > a.ylim[1] { continue; }
@@ -1690,9 +1691,13 @@ impl Figure {
                         write!(s,"<path d=\"M {edge} {y} h 1.2\" stroke=\"#444\" stroke-width=\"0.18\"/>")?;
                         let text = tick_label(value,&right.tick_labels,i);
                         let width = glyphs[&text].width_pt*MM_PER_PT;
+                        tick_right = tick_right.max(edge + 0.6*em + width);
                         place(&mut s,&glyphs,&text,edge+0.6*em+width/2.,y,0.,"#555555",&mut serial,&mut label_bounds)?;
                     }
-                    place(&mut s,&glyphs,&right.label,edge+3.8*em,r.y+r.height/2.,-90.,"#555555",&mut serial,&mut label_bounds)?;
+                    let half_label = glyphs.get(&right.label)
+                        .map_or(0., |glyph| glyph.height_pt*MM_PER_PT/2.);
+                    let label_x = (edge+3.8*em).max(tick_right+0.6*em+half_label);
+                    place(&mut s,&glyphs,&right.label,label_x,r.y+r.height/2.,-90.,"#555555",&mut serial,&mut label_bounds)?;
                 }
                 axis_bounds.extend(label_bounds[axis_start..].iter().cloned());
             }
@@ -1909,7 +1914,7 @@ impl Figure {
         Ok(())
     }
     #[cfg(feature = "export")]
-    fn tight_svg(&self, svg: &str) -> Result<String> {
+    pub(crate) fn tight_svg(&self, svg: &str) -> Result<String> {
         ensure!(
             self.export_padding_mm.is_finite() && self.export_padding_mm >= 0.,
             "Invalid export padding"
@@ -2158,6 +2163,16 @@ pub fn number(x: f64) -> String {
 mod tests {
     use super::*;
     use crate::{ColorMap, Legend, LegendEntry, Normalization};
+    #[test]
+    fn secondary_axis_reserves_measured_negative_tick_width() {
+        let mut f = crate::ArticleLayout::new(184., 10.).unwrap().figure(1., 100.).unwrap();
+        let mut axes = Axes::new([0., 1.], [-1., 1.], "Time", "Residual");
+        axes.secondary_y = Some(SecondaryAxis::new(
+            r"Path-rate residual ($\mathrm{m\,s^{-1}}$)",
+            vec![-1000., -500., 0., 500., 1000.], |v| v/1000.).unwrap());
+        f.panels.push(Panel::new(Rect::new(20., 15., 130., 60.), axes));
+        assert!(f.svg().is_ok());
+    }
     #[test]
     fn native_secondary_y_and_clock_labels_are_validated() {
         let mut f=Figure::new(IntendedUse::ArticleWide);
