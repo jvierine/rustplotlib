@@ -34,6 +34,63 @@ pub fn clear_label_position(candidates: &[[f64; 2]], size: [f64; 2], bounds: Rec
 }
 
 impl Figure {
+    /// Attach text to a data-coordinate anchor. Default placement avoids visible
+    /// geometry and existing text using measured LaTeX bounds. No white backing
+    /// is used to conceal collisions. Returns the inserted label index.
+    pub fn annotate(&mut self, panel: &crate::Panel, latex: impl Into<String>,
+        anchor: [f64;2]) -> Result<usize> {
+        let latex=latex.into();
+        let legend=crate::Legend::new(vec![crate::LegendEntry::circle("annotation", "black")]);
+        let mask=self.legend_occupancy(panel,&legend)?;
+        let w=(panel.rect.width*4.).ceil() as usize;
+        let mut obstacles=Vec::new();
+        // Compact horizontal runs preserve all occupied quarter-mm cells.
+        for (y,row) in mask.chunks(w).enumerate() {
+            let mut x=0;
+            while x<row.len() {
+                if !row[x] {x+=1;continue;}
+                let start=x;
+                while x<row.len() && row[x] {x+=1;}
+                obstacles.push(Rect::new(panel.rect.x+start as f64/4.-0.5,
+                    panel.rect.y+y as f64/4.-0.5,(x-start) as f64/4.+1.,1.25));
+            }
+        }
+        let glyphs=self.latex.typeset(self.labels.iter().map(|l|l.latex.clone())
+            .chain(std::iter::once(latex.clone())))?;
+        for l in &self.labels {
+            let g=&glyphs[&l.latex];
+            let angle=l.rotation.to_radians();
+            let gw=g.width_pt*25.4/72.27;let gh=g.height_pt*25.4/72.27;
+            let rw=gw*angle.cos().abs()+gh*angle.sin().abs();
+            let rh=gh*angle.cos().abs()+gw*angle.sin().abs();
+            obstacles.push(Rect::new(l.x-rw/2.-0.7,l.y-rh/2.-0.7,rw+1.4,rh+1.4));
+        }
+        let g=&glyphs[&latex];
+        let size=[g.width_pt*25.4/72.27+0.8,g.height_pt*25.4/72.27+0.8];
+        let origin=panel.data_to_figure(anchor);
+        let mut selected=None;
+        for gap in [1.5,3.,5.,8.,12.] {
+            let dx=size[0]/2.+gap;let dy=size[1]/2.+gap;
+            for delta in [[dx,0.],[-dx,0.],[0.,-dy],[0.,dy],
+                [dx,-dy],[-dx,-dy],[dx,dy],[-dx,dy]] {
+                let candidate=[origin[0]+delta[0],origin[1]+delta[1]];
+                if clear_label_position(&[candidate],size,panel.rect,&obstacles).is_ok() {
+                    selected=Some(candidate);break;
+                }
+            }
+            if selected.is_some() {break;}
+        }
+        let xy=selected.ok_or_else(||anyhow::anyhow!(
+            "No clear annotation position for {latex}; enlarge the panel or reduce clutter"))?;
+        let index=self.labels.len();
+        let mut label=Label::new(latex,xy[0],xy[1]);
+        let gap_x=((xy[0]-origin[0]).abs()-size[0]/2.).max(0.);
+        let gap_y=((xy[1]-origin[1]).abs()-size[1]/2.).max(0.);
+        if gap_x.hypot(gap_y)>3. {label.leader=Some(origin);}
+        self.labels.push(label);
+        Ok(index)
+    }
+
     /// Place an upright label outside a convex map boundary. Its entire measured
     /// glyph rectangle clears the boundary tangent by `clearance_mm`.
     pub fn boundary_label(&self, latex: impl Into<String>, anchor: [f64;2],
@@ -298,6 +355,35 @@ mod tests {
         assert!(figure.curved_contour_label("3 h", 7., &path,
             Rect::new(0., 0., 100., 100.), &[Rect::new(0., 0., 100., 100.)]).is_err());
     }
+    #[test]
+    fn anchored_annotations_avoid_geometry_and_other_labels_by_default() {
+        use crate::{Axes, IntendedUse, Layer, Line, Panel};
+        let mut f=Figure::new(IntendedUse::ArticleWide);
+        let mut p=Panel::new(Rect::new(10.,10.,70.,50.),
+            Axes::new([0.,1.],[0.,1.],"",""));
+        p.major_grid("#dddddd",0.4);
+        p.push(Layer::Line(Line::new(vec![[0.5,0.5],[1.,1.]],"blue")));
+        let first=f.annotate(&p,"Station",[0.5,0.5]).unwrap();
+        let second=f.annotate(&p,"Receiver",[0.5,0.5]).unwrap();
+        let glyphs=f.latex.typeset(f.labels.iter().map(|l|l.latex.clone())).unwrap();
+        let boxes:Vec<_>=[first,second].iter().map(|&i|{
+            let l=&f.labels[i];let g=&glyphs[&l.latex];
+            assert!(l.background.is_none());
+            let w=g.width_pt*25.4/72.27;let h=g.height_pt*25.4/72.27;
+            Rect::new(l.x-w/2.,l.y-h/2.,w,h)
+        }).collect();
+        assert!(boxes[0].x+boxes[0].width<boxes[1].x || boxes[1].x+boxes[1].width<boxes[0].x
+            || boxes[0].y+boxes[0].height<boxes[1].y || boxes[1].y+boxes[1].height<boxes[0].y);
+        for i in 0..=100 {
+            let t=i as f64/100.;
+            let q=p.data_to_figure([0.5+0.5*t,0.5+0.5*t]);
+            assert!(boxes.iter().all(|r|q[0]<r.x || q[0]>r.x+r.width || q[1]<r.y || q[1]>r.y+r.height));
+        }
+        let mut full=Line::new(vec![[0.,0.],[1.,0.],[1.,1.],[0.,1.],[0.,0.]],"black");
+        full.fill=Some("black".into());p.push(Layer::Line(full));
+        assert!(f.annotate(&p,"No space",[0.5,0.5]).is_err());
+    }
+
     #[test]
     fn avoids_measurements_and_rejects_crowded_positions() {
         let bounds = Rect::new(0., 0., 50., 30.);

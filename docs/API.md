@@ -205,6 +205,27 @@ remain available for placement. Export fails if the legend cannot fit without
 covering protected data. `avoid_data = false` explicitly fixes the requested
 corner. `padding_mm` and `background_opacity` control the restrained white backing.
 
+### Native Perspective Geometry
+
+`figure.annotate(&panel, text, anchor)` attaches text to a data-coordinate
+anchor with collision avoidance enabled by default. Placement measures the full
+LaTeX glyph bounds and avoids visible data, filled geometry, marker footprints,
+and existing labels. Background grids do not block placement. The returned label
+index allows color customization. No white box is used to hide a collision;
+placement returns an error if no nearby clear position exists. `Label::new`
+remains the explicit absolute-positioning API for deliberately fixed text.
+Annotations displaced more than 3 mm from their anchor acquire a fine leader
+that stops outside the measured text bounds, preserving their association
+without running a line through the lettering.
+
+`PerspectiveCamera::new(eye, target, up, vertical_fov_deg, aspect)` projects
+metric 3-D coordinates without rescaling individual dimensions. `project(point)`
+returns normalized screen x/right, y/down, and positive camera depth, or `None`
+for nonfinite points and points behind the camera. Projected geometry can use
+native vector lines, filled paths, markers, and LaTeX labels. Sort transparent
+triangles from far to near when composing a vector scene; viewport clipping
+remains the panel's responsibility.
+
 `ColorMap::seismic()` and `inferno()` provide the standard 256-entry tables.
 Listed colour bars use lookup-table image strips rather than large PDF stitching
 functions, preserving their discrete colours and avoiding PDF-reader limits.

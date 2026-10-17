@@ -32,3 +32,5 @@ pub use cartography::Projection;
 
 pub mod surface;
 pub use surface::Surface;
+pub mod perspective;
+pub use perspective::PerspectiveCamera;

@@ -1099,7 +1099,7 @@ impl Figure {
         }
         Ok(())
     }
-    fn all_labels(&self) -> Vec<String> {
+    pub(crate) fn all_labels(&self) -> Vec<String> {
         let mut v = vec![];
         for p in &self.panels {
             if let Some(a) = &p.axes
@@ -1265,7 +1265,7 @@ impl Figure {
         Ok(())
     }
 
-    fn legend_occupancy(&self, panel: &Panel, legend: &crate::Legend) -> Result<Vec<bool>> {
+    pub(crate) fn legend_occupancy(&self, panel: &Panel, legend: &crate::Legend) -> Result<Vec<bool>> {
         let w = (panel.rect.width * 4.).ceil() as u32;
         let h = (panel.rect.height * 4.).ceil() as u32;
         let mut mask = vec![false; (w * h) as usize];
@@ -2035,8 +2035,16 @@ fn rgb(c: [u8; 4]) -> String {
 }
 fn place_background(s: &mut String, glyphs: &BTreeMap<String, Glyph>, label: &Label) -> Result<()> {
     if let Some(anchor) = label.leader {
+        let glyph=&glyphs[&label.latex];
+        let angle=label.rotation.to_radians();
+        let dx=anchor[0]-label.x;let dy=anchor[1]-label.y;
+        let local=[dx*angle.cos()+dy*angle.sin(),-dx*angle.sin()+dy*angle.cos()];
+        let half=[glyph.width_pt*MM_PER_PT/2.+0.6,glyph.height_pt*MM_PER_PT/2.+0.6];
+        let ratio=(local[0].abs()/half[0]).max(local[1].abs()/half[1]);
+        let t=1./ratio.max(1.);
+        let end=[label.x+t*dx,label.y+t*dy];
         write!(s, "<path data-role=\"label-leader\" d=\"M {} {} L {} {}\" fill=\"none\" stroke=\"{}\" stroke-width=\"0.15\"/>",
-            anchor[0], anchor[1], label.x, label.y, label.color)?;
+            anchor[0], anchor[1], end[0], end[1], label.color)?;
     }
     if let Some(color) = &label.background {
         if label.latex.is_empty() { return Ok(()); }

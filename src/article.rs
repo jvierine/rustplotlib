@@ -18,6 +18,32 @@ pub(crate) struct ArticleContract {
 }
 
 impl ArticleLayout {
+    /// Check typography after the actual LaTeX inclusion scaling. This also
+    /// audits legacy figures that were not created with an article contract.
+    pub fn check_inclusion(self, figure: &Figure, included_width_mm: f64) -> Result<()> {
+        ensure!(!figure.tight_export,
+            "Cannot certify article font size with tight cropping enabled");
+        ensure!(included_width_mm.is_finite() && included_width_mm > 0.,
+            "Invalid article inclusion width");
+        let scale=included_width_mm/figure.width_mm;
+        for font in [figure.font_pt,figure.latex.font_pt] {
+            let printed=font*scale;
+            ensure!((printed-self.body_font_pt).abs()<0.01,
+                "Printed figure font is {printed:.3} pt, not article body size {:.3} pt; regenerate at the final inclusion width",
+                self.body_font_pt);
+        }
+        let explicit = regex::Regex::new(r"\\fontsize\s*\{\s*([0-9]+(?:\.[0-9]+)?)\s*\}")?;
+        for label in figure.all_labels() {
+            for size in explicit.captures_iter(&label) {
+                let printed=size[1].parse::<f64>()?*scale;
+                ensure!(printed+0.01>=self.body_font_pt,
+                    "Explicit annotation font prints at {printed:.3} pt, below article body size {:.3} pt",
+                    self.body_font_pt);
+            }
+        }
+        Ok(())
+    }
+
     pub fn new(linewidth_mm: f64, body_font_pt: f64) -> Result<Self> {
         ensure!(
             linewidth_mm.is_finite() && linewidth_mm > 0.,
@@ -70,6 +96,7 @@ impl ArticleContract {
         );
         ensure!(!f.tight_export,
             "Tight cropping changes the article inclusion scale; keep the fixed article canvas and adjust panel layout instead");
+        self.layout.check_inclusion(f,self.width_mm)?;
         Ok(())
     }
 }
@@ -170,5 +197,22 @@ mod tests {
         }
         let f = article.figure(1., 100.).unwrap();
         assert!(f.latex_include("bad}path.pdf").is_err());
+    }
+
+    #[test]
+    fn radiant_figure_regression_checks_printed_not_requested_font() {
+        let article=ArticleLayout::new(184.,10.).unwrap();
+        let mut old=Figure::new(IntendedUse::Custom{width_mm:196.,font_pt:9.});
+        old.tight_export=false;
+        // The old recipe shrank a 196 mm, 9 pt figure to 86% of the article width.
+        let error=article.check_inclusion(&old,0.86*184.).unwrap_err().to_string();
+        assert!(error.contains("7.266"),"{error}");
+        let corrected=article.figure(1.,106.).unwrap();
+        article.check_inclusion(&corrected,184.).unwrap();
+        assert!(article.check_inclusion(&corrected,0.86*184.).is_err());
+        let mut undersized=article.figure(1.,106.).unwrap();
+        undersized.labels.push(crate::Label::new(r"{\fontsize{7}{8}\selectfont 3 h}",30.,30.));
+        assert!(article.check_inclusion(&undersized,184.).is_err());
+        assert!(undersized.svg().is_err());
     }
 }
