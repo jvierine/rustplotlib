@@ -31,6 +31,7 @@ pub struct FrameRequest {
 }
 #[derive(Serialize)]
 pub struct InteractiveFrame {
+    pub color_stops:Vec<f32>,
     pub svg:String,
     pub width:f64,
     pub height:f64,
@@ -75,7 +76,7 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
     ensure!(spec.bounds[2]>spec.bounds[0]&&spec.bounds[3]>spec.bounds[1]&&request.color_limits[1]>request.color_limits[0],"Invalid physical limits");
     let n=spec.panels.len();
     let single_hsv=n==1&&spec.hsv_key.is_some();
-    let width=if single_hsv{request.width.clamp(800.,840.)}else if spec.hsv_key.is_some(){request.width.max(900.)}else{request.width};
+    let width=if single_hsv{request.width.clamp(800.,840.)}else if spec.hsv_key.is_some(){request.width.max(900.)}else if n==1&&spec.equal_aspect{request.width.min(520.)}else{request.width};
     let square=if single_hsv{((width*25.4/96.-82.)*0.58).min(80.)}else{0.};
     let height=if single_hsv{(square+32.)*96./25.4}else if n==1 && spec.equal_aspect {width-26.*96./25.4} else if n==1{300.}else{n as f64*121.+95.};
     let mut f=WebLayout::new(width,16.)?.figure(height)?;f.latex.cache=cache.into();
@@ -94,8 +95,11 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
         let mut label=WebLayout::new(80.,16.)?.figure(24.)?;label.latex.cache=cache.into();
         label.labels.push(Label::new(name,label.width_mm/2.,label.height_mm/2.));panel_labels.push(label.svg()?);
     }
-    f.scales.push(Scale::new(request.color_limits,Normalization::Linear,ColorMap::new(vec![
-        [0.08,0.08,0.16],[0.35,0.13,0.31],[0.71,0.24,0.25],[0.97,0.61,0.28],[1.,0.94,0.73]])?)?);
+    // A single native palette supplies both the GPU field and the colorbar.
+    let plasma=ColorMap::plasma();
+    let palette=ColorMap::new((0..32).map(|i|plasma.stops[i*255/31]).collect())?;
+    let color_stops=palette.stops.iter().flatten().map(|x|*x as f32).collect();
+    f.scales.push(Scale::new(request.color_limits,Normalization::Linear,palette)?);
     let r=f.panels[0].rect;let end=f.panels.last().unwrap().rect;
     let mut ticks=nice_ticks(request.color_limits[0],request.color_limits[1],5);
     if !ticks.contains(&request.color_limits[0]){ticks.insert(0,request.color_limits[0]);}
@@ -107,7 +111,7 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
         f.colorbars.push(Colorbar::new(Rect::new(r.x+r.width+3.,r.y,3.,end.y+end.height-r.y),0,&spec.colorbar_label,ticks));
     }
     f.layout_colorbars()?;let svg=f.svg()?;
-    Ok(InteractiveFrame{svg,width,height,panels:rectangles,panel_labels})
+    Ok(InteractiveFrame{svg,width,height,panels:rectangles,panel_labels,color_stops})
 }
 
 #[cfg(test)]mod tests{

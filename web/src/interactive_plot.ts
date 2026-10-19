@@ -3,7 +3,7 @@
  */
 import init,{FieldView,PlotViewport} from '../pkg/rustplotlib_web.js';
 export type FieldSpec={bounds:[number,number,number,number];xlabel:string;ylabel:string;colorbar_label:string;panels:string[];utc_origin_seconds?:number|null};
-type Frame={svg:string;width:number;height:number;panels:number[][];panel_labels:string[]};
+type Frame={svg:string;width:number;height:number;panels:number[][];panel_labels:string[];color_stops?:number[]};
 type Selection={panel:number;x:number;y:number};
 type Options={id:string;spec:FieldSpec;frameEndpoint?:string;frameParameters?:Record<string,number>;colorLimits?:[number,number];onSelect?:(point:Selection)=>void};
 let initialization:Promise<unknown>|undefined;
@@ -69,7 +69,7 @@ export class InteractiveFieldPlot{
    Object.assign(p.canvas.style,{left:x*100+'%',top:y*100+'%',width:w*100+'%',height:h*100+'%'});
    const dpr=Math.min(devicePixelRatio||1,2);p.canvas.width=Math.max(2,Math.round(w*frame.width*dpr));p.canvas.height=Math.max(2,Math.round(h*frame.height*dpr));
    const url=svgURL(frame.panel_labels[i]);this.labelURLs.push(url);p.label.src=url;p.label.style.display=this.options.spec.panels[i]?'block':'none';p.label.style.left=`calc(${x*100}% + 4px)`;p.label.style.top=`calc(${y*100}% + 4px)`;
-   p.field.set_scale(this.limits[0],this.limits[1],0,.1,2);p.applyView();
+   p.field.set_scale(this.limits[0],this.limits[1],0,.1,2);if(frame.color_stops)p.field.set_colormap(Float32Array.from(frame.color_stops));p.applyView();
   });
   this.axes.style.visibility='visible';this.root.removeAttribute('data-plot-error');
  }
