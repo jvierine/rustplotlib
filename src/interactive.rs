@@ -45,7 +45,16 @@ pub fn nice_ticks(lo:f64,hi:f64,target:usize)->Vec<f64>{
     if !lo.is_finite() || !hi.is_finite() || hi<=lo || target<2{return vec![];}
     let raw=(hi-lo)/(target-1) as f64;let magnitude=10_f64.powf(raw.log10().floor());
     let fraction=raw/magnitude;
-    let step=[1.,2.,2.5,5.,10.].into_iter().find(|x|*x>=fraction).unwrap()*magnitude;
+    let mut step=[1.,2.,2.5,5.,10.].into_iter().find(|x|*x>=fraction).unwrap()*magnitude;
+    // A rounded step can leave only zero on a symmetric Doppler axis.
+    // Prefer a denser nice step rather than silently losing scale context.
+    let minimum=target.min(3);
+    while ((hi/step+1e-8).floor()-(lo/step).ceil()+1.).max(0.) < minimum as f64 {
+        let exponent=10_f64.powf(step.log10().floor());
+        let normalized=step/exponent;
+        step=[5.,2.5,2.,1.,0.5].into_iter()
+            .find(|x|*x<normalized-1e-8).unwrap_or(0.5)*exponent;
+    }
     let first=(lo/step).ceil()*step;
     (0..target+2).map(|i|first+i as f64*step).take_while(|v|*v<=hi+step*1e-8).collect()
 }
@@ -128,5 +137,17 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
 #[cfg(test)]mod tests{
     use super::*;
     #[test]fn ticks_are_nice_and_bounded(){assert_eq!(nice_ticks(3.,6.,4),vec![3.,4.,5.,6.]);assert_eq!(nice_ticks(50.,120.,4),vec![50.,75.,100.]);}
+    #[test]fn doppler_ticks_never_collapse_to_zero(){
+        for target in [3,4,5]{
+            assert_eq!(nice_ticks(-99.66504587765958,99.66504587765958,target),vec![-50.,0.,50.]);
+        }
+    }
+    #[test]fn zoomed_numeric_axes_keep_three_ticks(){
+        for (lo,hi) in [(-0.09967,0.09967),(31.,39.),(-99.,-51.),(0.01,0.09)]{
+            let ticks=nice_ticks(lo,hi,3);
+            assert!(ticks.len()>=3,"{lo}..{hi}: {ticks:?}");
+            assert!(ticks.iter().all(|v|*v>=lo&&*v<=hi));
+        }
+    }
     #[test]fn utc_ticks_follow_zoom(){let(t,l)=utc_ticks(0.,1.,0.,500.);assert_eq!(l,vec!["00:00","00:30","01:00"]);assert_eq!(t,vec![0.,0.5,1.]);}
 }
