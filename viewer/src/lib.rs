@@ -58,10 +58,10 @@ fn uniform2(gl: &Gl, p: &WebGlProgram, k: &str, a: f32, b: f32) {
 }
 fn custom_colormap(gl: &Gl, p: &WebGlProgram, rgb: &[f32]) -> Result<(), JsValue> {
     if rgb.len() % 3 != 0
-        || !(2..=32).contains(&(rgb.len() / 3))
+        || !(2..=128).contains(&(rgb.len() / 3))
         || !rgb.iter().all(|v| v.is_finite() && (0.0..=1.0).contains(v))
     {
-        return Err(error("Provide 2–32 RGB color stops in [0,1]"));
+        return Err(error("Provide 2–128 RGB color stops in [0,1]"));
     }
     gl.use_program(Some(p));
     gl.uniform3fv_with_f32_array(gl.get_uniform_location(p, "colorStops[0]").as_ref(), rgb);
