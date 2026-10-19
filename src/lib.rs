@@ -11,6 +11,7 @@ pub use axis_scale::AxisScale;
 pub mod article;
 pub use article::ArticleLayout;
 pub mod web_layout;
+pub mod interactive;
 pub use web_layout::WebLayout;
 pub mod figure;
 pub mod latex;

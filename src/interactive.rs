@@ -1,0 +1,104 @@
+//! Native decorations for interactive fields. Clients send viewport state, not
+//! hand-built ticks. The same Figure/Axes/Colorbar and LaTeX engine is used for
+//! initial views, zoomed views, shared-axis stacks and saved figures.
+use crate::*;
+use anyhow::{Result,ensure};
+use serde::{Deserialize,Serialize};
+use std::path::Path;
+
+#[derive(Clone,Debug,Serialize,Deserialize)]
+pub struct InteractiveFieldSpec {
+    /// Physical x0,y0,x1,y1, independent of texture dimensions.
+    pub bounds:[f64;4],
+    pub xlabel:String,
+    pub ylabel:String,
+    pub colorbar_label:String,
+    /// One name per panel; a stack shares x decorations automatically.
+    pub panels:Vec<String>,
+    /// If supplied, x coordinates are hours relative to this Unix time.
+    pub utc_origin_seconds:Option<f64>,
+}
+#[derive(Clone,Debug,Serialize,Deserialize)]
+pub struct FrameRequest {
+    pub width:f64,
+    /// Normalized x0,y0,x1,y1 from PlotViewport; default [0,0,1,1].
+    pub viewport:[f64;4],
+    pub color_limits:[f64;2],
+}
+#[derive(Serialize)]
+pub struct InteractiveFrame {
+    pub svg:String,
+    pub width:f64,
+    pub height:f64,
+    pub panels:Vec<[f64;4]>,
+    pub panel_labels:Vec<String>,
+}
+
+pub fn nice_ticks(lo:f64,hi:f64,target:usize)->Vec<f64>{
+    if !lo.is_finite() || !hi.is_finite() || hi<=lo || target<2{return vec![];}
+    let raw=(hi-lo)/(target-1) as f64;let magnitude=10_f64.powf(raw.log10().floor());
+    let fraction=raw/magnitude;
+    let step=[1.,2.,2.5,5.,10.].into_iter().find(|x|*x>=fraction).unwrap()*magnitude;
+    let first=(lo/step).ceil()*step;
+    (0..target+2).map(|i|first+i as f64*step).take_while(|v|*v<=hi+step*1e-8).collect()
+}
+
+fn utc_ticks(lo:f64,hi:f64,origin:f64,width:f64)->(Vec<f64>,Vec<String>){
+    let target=(width/110.).floor().clamp(2.,7.) as usize;
+    let span=(hi-lo)*3600.;let needed=span/(target-1) as f64;
+    let step=[1.,2.,5.,10.,15.,30.,60.,120.,300.,600.,900.,1800.,3600.,7200.,10800.,21600.,43200.,86400.]
+        .into_iter().find(|v|*v>=needed).unwrap_or(86400.);
+    let first=((origin+lo*3600.)/step).ceil()*step;
+    let mut values=vec![];let mut labels=vec![];
+    for i in 0..target+2{
+        let unix=first+i as f64*step;if unix>origin+hi*3600.+1e-6{break;}
+        if let Some(t)=chrono::DateTime::<chrono::Utc>::from_timestamp(unix.round() as i64,0){
+            values.push((unix-origin)/3600.);
+            labels.push(t.format(if span<120.{"%H:%M:%S"}else if span<86400.{"%H:%M"}else{"%m-%d %H:%M"}).to_string());
+        }
+    }
+    (values,labels)
+}
+
+/// Default native axis factory. Decorations cannot silently be omitted.
+pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)->Result<InteractiveFrame>{
+    ensure!(spec.bounds.iter().chain(request.viewport.iter()).chain(request.color_limits.iter()).all(|x|x.is_finite()),"Nonfinite bounds");
+    ensure!(!spec.xlabel.is_empty()&&!spec.ylabel.is_empty()&&!spec.colorbar_label.is_empty(),"Interactive plots require axis and colorbar labels");
+    ensure!((1..=12).contains(&spec.panels.len()),"Expected 1..12 panels");
+    ensure!(request.width>=320.&&request.width<=2000.,"Invalid CSS width");
+    let b=request.viewport;
+    ensure!(b[0]>=0.&&b[1]>=0.&&b[2]<=1.&&b[3]<=1.&&b[2]>b[0]&&b[3]>b[1],"Invalid normalized viewport");
+    ensure!(spec.bounds[2]>spec.bounds[0]&&spec.bounds[3]>spec.bounds[1]&&request.color_limits[1]>request.color_limits[0],"Invalid physical limits");
+    let n=spec.panels.len();let height=if n==1{300.}else{n as f64*121.+95.};
+    let mut f=WebLayout::new(request.width,16.)?.figure(height)?;f.latex.cache=cache.into();
+    let x0=spec.bounds[0]+b[0]*(spec.bounds[2]-spec.bounds[0]);let x1=spec.bounds[0]+b[2]*(spec.bounds[2]-spec.bounds[0]);
+    let y0=spec.bounds[1]+b[1]*(spec.bounds[3]-spec.bounds[1]);let y1=spec.bounds[1]+b[3]*(spec.bounds[3]-spec.bounds[1]);
+    let mut rectangles=vec![];let mut panel_labels=vec![];
+    for (i,name) in spec.panels.iter().enumerate(){
+        let rect=if n==1{Rect::new(20.,7.,f.width_mm-50.,f.height_mm-24.)}
+            else{Rect::new(20.,4.+i as f64*32.,f.width_mm-50.,30.)};
+        let mut axes=Axes::new([x0,x1],[y0,y1],&spec.xlabel,if i==n/2{&spec.ylabel}else{""});
+        axes.show_x_axis=i==n-1;axes.yticks=nice_ticks(y0,y1,4);
+        if let Some(origin)=spec.utc_origin_seconds{
+            let (ticks,labels)=utc_ticks(x0,x1,origin,rect.width*96./25.4);axes.xticks=ticks;axes.xticklabels=Some(labels);
+        }else{axes.xticks=nice_ticks(x0,x1,if request.width<500.{3}else{5});}
+        f.panels.push(Panel::new(rect,axes));rectangles.push([rect.x/f.width_mm,rect.y/f.height_mm,rect.width/f.width_mm,rect.height/f.height_mm]);
+        let mut label=WebLayout::new(80.,16.)?.figure(24.)?;label.latex.cache=cache.into();
+        label.labels.push(Label::new(name,label.width_mm/2.,label.height_mm/2.));panel_labels.push(label.svg()?);
+    }
+    f.scales.push(Scale::new(request.color_limits,Normalization::Linear,ColorMap::new(vec![
+        [0.08,0.08,0.16],[0.35,0.13,0.31],[0.71,0.24,0.25],[0.97,0.61,0.28],[1.,0.94,0.73]])?)?);
+    let r=f.panels[0].rect;let end=f.panels.last().unwrap().rect;
+    let mut ticks=nice_ticks(request.color_limits[0],request.color_limits[1],5);
+    if !ticks.contains(&request.color_limits[0]){ticks.insert(0,request.color_limits[0]);}
+    if !ticks.contains(&request.color_limits[1]){ticks.push(request.color_limits[1]);}
+    f.colorbars.push(Colorbar::new(Rect::new(r.x+r.width+3.,r.y,3.,end.y+end.height-r.y),0,&spec.colorbar_label,ticks));
+    f.layout_colorbars()?;let svg=f.svg()?;
+    Ok(InteractiveFrame{svg,width:request.width,height,panels:rectangles,panel_labels})
+}
+
+#[cfg(test)]mod tests{
+    use super::*;
+    #[test]fn ticks_are_nice_and_bounded(){assert_eq!(nice_ticks(3.,6.,4),vec![3.,4.,5.,6.]);assert_eq!(nice_ticks(50.,120.,4),vec![50.,75.,100.]);}
+    #[test]fn utc_ticks_follow_zoom(){let(t,l)=utc_ticks(0.,1.,0.,500.);assert_eq!(l,vec!["00:00","00:30","01:00"]);assert_eq!(t,vec![0.,0.5,1.]);}
+}
