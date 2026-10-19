@@ -175,7 +175,7 @@ impl SeriesView {
                 y0,
                 y1,
                 &a.y.format,
-                ((h / 55.).floor() as usize).clamp(4, 7),
+                ((h / 55.).floor() as usize).clamp(6, 7),
             ) {
                 let y = self.py(v);
                 let x = if a.right_y { left + w } else { left };
