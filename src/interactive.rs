@@ -8,6 +8,8 @@ use std::path::Path;
 
 #[derive(Clone,Debug,Serialize,Deserialize)]
 pub struct InteractiveFieldSpec {
+    #[serde(default)]
+    pub equal_aspect:bool,
     /// Physical x0,y0,x1,y1, independent of texture dimensions.
     pub bounds:[f64;4],
     pub xlabel:String,
@@ -69,7 +71,7 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
     let b=request.viewport;
     ensure!(b[0]>=0.&&b[1]>=0.&&b[2]<=1.&&b[3]<=1.&&b[2]>b[0]&&b[3]>b[1],"Invalid normalized viewport");
     ensure!(spec.bounds[2]>spec.bounds[0]&&spec.bounds[3]>spec.bounds[1]&&request.color_limits[1]>request.color_limits[0],"Invalid physical limits");
-    let n=spec.panels.len();let height=if n==1{300.}else{n as f64*121.+95.};
+    let n=spec.panels.len();let height=if n==1 && spec.equal_aspect {request.width-26.*96./25.4} else if n==1{300.}else{n as f64*121.+95.};
     let mut f=WebLayout::new(request.width,16.)?.figure(height)?;f.latex.cache=cache.into();
     let x0=spec.bounds[0]+b[0]*(spec.bounds[2]-spec.bounds[0]);let x1=spec.bounds[0]+b[2]*(spec.bounds[2]-spec.bounds[0]);
     let y0=spec.bounds[1]+b[1]*(spec.bounds[3]-spec.bounds[1]);let y1=spec.bounds[1]+b[3]*(spec.bounds[3]-spec.bounds[1]);

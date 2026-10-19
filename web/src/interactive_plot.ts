@@ -5,7 +5,7 @@ import init,{FieldView,PlotViewport} from '../pkg/rustplotlib_web.js';
 export type FieldSpec={bounds:[number,number,number,number];xlabel:string;ylabel:string;colorbar_label:string;panels:string[];utc_origin_seconds?:number|null};
 type Frame={svg:string;width:number;height:number;panels:number[][];panel_labels:string[]};
 type Selection={panel:number;x:number;y:number};
-type Options={id:string;spec:FieldSpec;frameEndpoint?:string;colorLimits?:[number,number];onSelect?:(point:Selection)=>void};
+type Options={id:string;spec:FieldSpec;frameEndpoint?:string;frameParameters?:Record<string,number>;colorLimits?:[number,number];onSelect?:(point:Selection)=>void};
 let initialization:Promise<unknown>|undefined;
 const clamp=(v:number)=>Math.max(0,Math.min(1,v));
 const svgURL=(svg:string)=>URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));
@@ -58,7 +58,7 @@ export class InteractiveFieldPlot{
   const width=Math.max(360,Math.min(1200,Math.round(this.root.clientWidth)));
   const endpoint=this.options.frameEndpoint||new URL('./api/frame',location.href).href;
   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},signal:this.abort.signal,
-   body:JSON.stringify({id:this.options.id,width,viewport:Array.from(this.viewport.bounds()),color_limits:this.limits})});
+   body:JSON.stringify({...this.options.frameParameters,id:this.options.id,width,viewport:Array.from(this.viewport.bounds()),color_limits:this.limits})});
   if(!response.ok)throw Error(`Native plot frame failed (${response.status})`);const frame:Frame=await response.json();
   if(request!==this.revision)return;
   this.frame=frame;this.stage.style.width=frame.width+'px';this.stage.style.height=frame.height+'px';
