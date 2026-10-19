@@ -107,6 +107,11 @@ fn ticks(lo: f64, hi: f64, format: &str, count: usize) -> Vec<(f64, String)> {
         out.push((value, label));
         value += step;
     }
+    // Rounded UTC steps can leave only one interior tick (e.g. noon on a
+    // nearly full day). Refine the step until the scale has two markers.
+    if format == "utc" && out.len() < 2 && count < 64 {
+        return ticks(lo, hi, format, count * 2);
+    }
     out
 }
 
@@ -321,6 +326,12 @@ mod axes_tests {
                 "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"
             ]
         );
+    }
+    #[test]
+    fn nearly_full_day_has_more_than_a_noon_tick() {
+        let labels = ticks(1000., 86395., "utc", 4);
+        assert_eq!(labels.iter().map(|(_, s)| s.as_str()).collect::<Vec<_>>(),
+            vec!["06:00", "12:00", "18:00"]);
     }
     #[test]
     fn log_labels_are_integer_powers() {
