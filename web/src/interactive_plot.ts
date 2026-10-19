@@ -3,7 +3,7 @@
  */
 import init,{FieldView,PlotViewport} from '../pkg/rustplotlib_web.js';
 export type FieldSpec={bounds:[number,number,number,number];xlabel:string;ylabel:string;colorbar_label:string;panels:string[];utc_origin_seconds?:number|null};
-type Frame={svg:string;width:number;height:number;panels:number[][];panel_labels:string[];color_stops?:number[]};
+type Frame={svg:string;width:number;height:number;panels:number[][];panel_labels:string[];color_stops?:number[];color_regions?:number[][]};
 type Selection={panel:number;x:number;y:number};
 type Options={id:string;spec:FieldSpec;frameEndpoint?:string;frameParameters?:Record<string,number>;colorLimits?:[number,number];onSelect?:(point:Selection)=>void};
 let initialization:Promise<unknown>|undefined;
@@ -22,12 +22,16 @@ export class InteractiveFieldPlot{
  private frame?:Frame;private frameURL?:string;private labelURLs:string[]=[];
  private drag?:{panel:number;x:number;y:number;lastX:number;lastY:number;pan:boolean};
  private selectionBox=document.createElement('div');
+ private colorButtons:HTMLButtonElement[]=[];
+ private editor?:HTMLDialogElement;
+ private momentMode=false;
+ private momentLimits?:[number,number];
  onSelect?:Options['onSelect'];
  private constructor(readonly root:HTMLElement,readonly options:Options){
   const s=options.spec;
   if(!s.xlabel?.trim()||!s.ylabel?.trim()||!s.colorbar_label?.trim())throw Error('Interactive plots require x, y and colorbar labels');
   if(!s.panels.length||s.bounds.length!==4||!s.bounds.every(Number.isFinite))throw Error('Invalid interactive figure specification');
-  this.onSelect=options.onSelect;this.limits=options.colorLimits||[0,1];
+  this.onSelect=options.onSelect;this.limits=options.colorLimits||[0,1];this.momentMode=options.frameParameters?.hsv===1;
   const toolbar=document.createElement('div');toolbar.style.cssText='display:flex;gap:12px;align-items:center;font:inherit;margin:6px 0';
   this.resetButton.textContent='Reset view';this.resetButton.onclick=()=>this.reset();
   const help=document.createElement('span');help.textContent='Wheel: zoom · drag: box zoom · Shift-drag: pan · double-click: reset';help.style.fontSize='0.875em';
@@ -45,7 +49,35 @@ export class InteractiveFieldPlot{
  static async mount(root:HTMLElement,options:Options){initialization??=init();await initialization;
   const plot=new InteractiveFieldPlot(root,options);await plot.requestFrame();plot.observer.observe(root);return plot;}
  setColorLimits(low:number,high:number){if(!Number.isFinite(low)||!Number.isFinite(high)||high<=low)throw Error('Invalid color limits');
-  if(this.limits[0]===low&&this.limits[1]===high)return;this.limits=[low,high];this.panels.forEach(p=>p.field.set_scale(low,high,0,.1,2));this.queueFrame();}
+  if(this.limits[0]===low&&this.limits[1]===high)return;this.limits=[low,high];this.panels.forEach(p=>{p.field.set_scale(low,high,0,.1,2);if(this.frame?.color_stops)p.field.set_colormap(Float32Array.from(this.frame.color_stops));});this.queueFrame();}
+ getColorLimits():[number,number]{return [...this.limits];}
+ getHsvLimits():[number,number]|undefined{return this.momentLimits?[...this.momentLimits]:undefined;}
+ setMomentMode(enabled:boolean){if(this.momentMode===enabled)return;this.momentMode=enabled;this.queueFrame();}
+ setHsvLimits(velocity:number,width:number){if(!Number.isFinite(velocity)||velocity<=0||!Number.isFinite(width)||width<=0)throw Error('Invalid HSV limits');
+  if(this.momentLimits?.[0]===velocity&&this.momentLimits?.[1]===width)return;this.momentLimits=[velocity,width];this.panels.forEach(p=>p.applyHsvLimits(velocity,width));this.queueFrame();}
+ private openColorEditor(){
+  this.editor?.remove();const dialog=document.createElement('dialog');this.editor=dialog;dialog.setAttribute('aria-label','Adjust color limits');
+  dialog.style.cssText='position:fixed;max-width:min(480px,90vw);padding:20px;border:1px solid #8b99aa;border-radius:7px;background:white;color:#172134;font:16px system-ui;box-shadow:0 8px 30px #0004';
+  const title=document.createElement('h2');title.textContent='Color limits';title.style.cssText='font:inherit;font-weight:600;margin:0 0 14px';dialog.append(title);
+  const span=this.limits[1]-this.limits[0],base:[number,number]=[this.limits[0]-4*span,this.limits[1]+4*span];
+  const row=(label:string,value:number,min:number,max:number,step:number,apply:(value:number)=>void)=>{
+   const line=document.createElement('label');line.style.cssText='display:grid;grid-template-columns:130px 160px 80px;gap:8px;align-items:center;margin:12px 0';
+   const text=document.createElement('span');text.textContent=label;
+   const slider=document.createElement('input');slider.type='range';slider.min=String(min);slider.max=String(max);slider.step=String(step);slider.value=String(value);slider.setAttribute('aria-label',label);
+   const number=document.createElement('input');number.type='number';number.step='any';number.value=String(value);number.setAttribute('aria-label',label+' value');number.style.width='75px';
+   slider.oninput=()=>{number.value=slider.value;apply(+slider.value);};number.onchange=()=>{if(Number.isFinite(+number.value)){slider.value=number.value;apply(+number.value);}};
+   line.append(text,slider,number);dialog.append(line);
+  };
+  row('Minimum',this.limits[0],base[0],base[1],span/500,v=>{if(v<this.limits[1])this.setColorLimits(v,this.limits[1]);});
+  row('Maximum',this.limits[1],base[0],base[1],span/500,v=>{if(v>this.limits[0])this.setColorLimits(this.limits[0],v);});
+  if(this.momentMode){const limits=this.momentLimits||[this.options.frameParameters?.velocity_limit||30,this.options.frameParameters?.width_limit||10];
+   row('Velocity +/- m/s',limits[0],.1,Math.max(limits[0]*4,200),.1,v=>{if(v>0)this.setHsvLimits(v,(this.momentLimits||limits)[1]);});
+   row('Width m/s',limits[1],.1,Math.max(limits[1]*4,100),.1,v=>{if(v>0)this.setHsvLimits((this.momentLimits||limits)[0],v);});
+  }
+  const close=document.createElement('button');close.textContent='Done';close.onclick=()=>dialog.close();dialog.append(close);document.body.append(dialog);
+  dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();const e=event as MouseEvent;if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
+  dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal();
+ }
  setSpec(spec:FieldSpec){this.options.spec=spec;this.reset();}
  setFrameParameters(parameters:Record<string,number>){this.options.frameParameters=parameters;this.queueFrame();}
  reset(){this.viewport.reset();this.changed();}
@@ -53,13 +85,13 @@ export class InteractiveFieldPlot{
  applyView(){this.panels.forEach(p=>p.applyView());}
  private changed(){this.applyView();this.axes.style.visibility='hidden';this.queueFrame();}
  private queueFrame(){clearTimeout(this.timer);this.timer=window.setTimeout(()=>this.requestFrame().catch(e=>this.reportError(e)),100);}
- private reportError(e:unknown){this.root.setAttribute('data-plot-error',String(e));this.root.dispatchEvent(new CustomEvent('rustplotlib-error',{detail:e}));}
+ private reportError(e:unknown){if(e instanceof DOMException&&e.name==='AbortError')return;this.root.setAttribute('data-plot-error',String(e));this.root.dispatchEvent(new CustomEvent('rustplotlib-error',{detail:e}));}
  private async requestFrame(){
   const request=++this.revision;this.abort?.abort();this.abort=new AbortController();
   const width=Math.max(360,Math.min(1200,Math.round(this.root.clientWidth)));
   const endpoint=this.options.frameEndpoint||new URL('./api/frame',location.href).href;
   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},signal:this.abort.signal,
-   body:JSON.stringify({...this.options.frameParameters,id:this.options.id,width,viewport:Array.from(this.viewport.bounds()),color_limits:this.limits})});
+   body:JSON.stringify({...this.options.frameParameters,...(this.momentLimits?{velocity_limit:this.momentLimits[0],width_limit:this.momentLimits[1]}:{}),hsv:this.momentMode?1:0,id:this.options.id,width,viewport:Array.from(this.viewport.bounds()),color_limits:this.limits})});
   if(!response.ok)throw Error(`Native plot frame failed (${response.status})`);const frame:Frame=await response.json();
   if(request!==this.revision)return;
   this.frame=frame;this.stage.style.width=frame.width+'px';this.stage.style.height=frame.height+'px';
@@ -72,6 +104,9 @@ export class InteractiveFieldPlot{
    p.field.set_scale(this.limits[0],this.limits[1],0,.1,2);if(frame.color_stops)p.field.set_colormap(Float32Array.from(frame.color_stops));p.applyView();
   });
   this.axes.style.visibility='visible';this.root.removeAttribute('data-plot-error');
+  this.colorButtons.forEach(b=>b.remove());this.colorButtons=[];
+  (frame.color_regions||[]).forEach(([x,y,w,h])=>{const button=document.createElement('button');button.setAttribute('aria-label','Adjust color limits');button.title='Click to adjust color limits';
+   button.style.cssText=`position:absolute;left:${x*100}%;top:${y*100}%;width:${Math.max(24,w*frame.width)}px;height:${h*100}%;z-index:4;background:transparent;border:0;padding:0;cursor:pointer`;button.onclick=()=>this.openColorEditor();this.stage.append(button);this.colorButtons.push(button);});
  }
  private point(panel:InteractiveFieldPanel,event:MouseEvent){const r=panel.canvas.getBoundingClientRect();return [clamp((event.clientX-r.left)/r.width),clamp(1-(event.clientY-r.top)/r.height)];}
  private bind(panel:InteractiveFieldPanel){const c=panel.canvas;
@@ -89,14 +124,16 @@ export class InteractiveFieldPlot{
   });
   c.addEventListener('pointercancel',()=>{this.drag=undefined;this.selectionBox.style.display='none';});
  }
- dispose(){this.observer.disconnect();clearTimeout(this.timer);this.abort?.abort();this.panels.forEach(p=>p.field.free());this.viewport.free();if(this.frameURL)URL.revokeObjectURL(this.frameURL);this.labelURLs.forEach(URL.revokeObjectURL);this.root.replaceChildren();}
+ dispose(){this.editor?.remove();this.observer.disconnect();clearTimeout(this.timer);this.abort?.abort();this.panels.forEach(p=>p.field.free());this.viewport.free();if(this.frameURL)URL.revokeObjectURL(this.frameURL);this.labelURLs.forEach(URL.revokeObjectURL);this.root.replaceChildren();}
 }
 
 export class InteractiveFieldPanel{
  readonly field:FieldView;private dataBounds?:number[];
+ private moments?:Float32Array;
  constructor(private plot:InteractiveFieldPlot,readonly canvas:HTMLCanvasElement,readonly label:HTMLImageElement,readonly index:number){this.field=new FieldView(canvas);this.field.set_missing_color(.18,.23,.30,1);}
- set_rectilinear_data(x:Float32Array,y:Float32Array,z:Float32Array){this.dataBounds=[x[0],y[0],x[x.length-1],y[y.length-1]];this.field.set_rectilinear_data(x,y,z);this.applyView();}
+ set_rectilinear_data(x:Float32Array,y:Float32Array,z:Float32Array){this.moments=undefined;this.plot.setMomentMode(false);this.dataBounds=[x[0],y[0],x[x.length-1],y[y.length-1]];this.field.set_rectilinear_data(x,y,z);this.applyView();}
  set_scale(low:number,high:number,_mode=0,_width=.1,_palette=2){this.plot.setColorLimits(low,high);}
- set_moment_data(values:Float32Array,velocity:number,width:number){this.field.set_moment_data(values,velocity,width);this.applyView();}
+ set_moment_data(values:Float32Array,velocity:number,width:number){this.moments=values;this.plot.setMomentMode(true);this.field.set_moment_data(values,velocity,width);this.plot.setHsvLimits(velocity,width);this.applyView();}
+ applyHsvLimits(velocity:number,width:number){if(this.moments){this.field.set_moment_data(this.moments,velocity,width);this.applyView();}}
  applyView(){if(!this.dataBounds)return;const b=this.plot.physicalBounds(),d=this.dataBounds;this.field.set_view((b[0]-d[0])/(d[2]-d[0]),(b[1]-d[1])/(d[3]-d[1]),(b[2]-d[0])/(d[2]-d[0]),(b[3]-d[1])/(d[3]-d[1]));}
 }

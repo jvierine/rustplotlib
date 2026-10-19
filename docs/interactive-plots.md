@@ -50,3 +50,13 @@ Registered interactive specifications can supply `hsv_key`; the complete plot
 then uses a compact equal-aspect data panel beside this multivariable legend.
 Update numerical frame parameters when hue/width limits change, so the native
 key changes with the GPU image. Scientific labels and units are still native.
+
+Click any native scalar colorbar or either HSV key slice to open the default
+color-limit editor. Minimum/maximum sliders and numeric inputs update the GPU
+immediately and request matching native decorations. Moment fields also get
+velocity-hue and spectral-width controls. No per-page popup implementation or
+click-position guesses are needed: hit regions come from the native figure.
+`getColorLimits`, `getHsvLimits`, `setColorLimits` and `setHsvLimits` are public.
+Moment-data calls automatically select the HSV key; scalar data selects the
+scalar bar. Preserve per-plot styles across data refreshes instead of resetting
+limits in the host on every redraw.

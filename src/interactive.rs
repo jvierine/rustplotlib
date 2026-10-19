@@ -31,6 +31,8 @@ pub struct FrameRequest {
 }
 #[derive(Serialize)]
 pub struct InteractiveFrame {
+    /// Native hit regions for the default color-limit editor.
+    pub color_regions:Vec<[f64;4]>,
     pub color_stops:Vec<f32>,
     pub svg:String,
     pub width:f64,
@@ -117,7 +119,10 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
         f.colorbars.push(Colorbar::new(Rect::new(r.x+r.width+3.,r.y,3.,end.y+end.height-r.y),0,&spec.colorbar_label,ticks));
     }
     f.layout_colorbars()?;let svg=f.svg()?;
-    Ok(InteractiveFrame{svg,width,height,panels:rectangles,panel_labels,color_stops})
+    let regions:Vec<Rect>=if spec.hsv_key.is_some(){f.panels[n..].iter().map(|p|p.rect).collect()}
+        else{f.colorbars.iter().map(|b|b.rect).collect()};
+    let color_regions=regions.iter().map(|r|[r.x/f.width_mm,r.y/f.height_mm,r.width/f.width_mm,r.height/f.height_mm]).collect();
+    Ok(InteractiveFrame{svg,width,height,panels:rectangles,panel_labels,color_stops,color_regions})
 }
 
 #[cfg(test)]mod tests{
