@@ -8,6 +8,9 @@ use std::path::Path;
 
 #[derive(Clone,Debug,Serialize,Deserialize)]
 pub struct InteractiveFieldSpec {
+    /// Optional paper color for the axes frame and separate panel labels.
+    #[serde(default)]
+    pub background:Option<[f64;3]>,
     /// Optional sequential RGB stops shared by the native colorbar and GPU field.
     #[serde(default)]
     pub color_stops:Option<Vec<[f64;3]>>,
@@ -95,6 +98,7 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
     let square=if single_hsv{if key_below{60.}else{((width*25.4/96.-82.)*0.58).min(80.)}}else{0.};
     let height=if single_hsv{(square+if key_below{69.}else{32.})*96./25.4}else if n==1 && spec.equal_aspect {width-26.*96./25.4} else if n==1{300.}else{n as f64*121.+95.+if key_below{155.}else{0.}};
     let mut f=WebLayout::new(width,16.)?.figure(height)?;f.latex.cache=cache.into();
+    if let Some(background)=spec.background {f.background=background;}
     let x0=spec.bounds[0]+b[0]*(spec.bounds[2]-spec.bounds[0]);let x1=spec.bounds[0]+b[2]*(spec.bounds[2]-spec.bounds[0]);
     let y0=spec.bounds[1]+b[1]*(spec.bounds[3]-spec.bounds[1]);let y1=spec.bounds[1]+b[3]*(spec.bounds[3]-spec.bounds[1]);
     let mut rectangles=vec![];let mut panel_labels=vec![];
@@ -108,6 +112,7 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
         }else{axes.xticks=nice_ticks(x0,x1,if request.width<500.{3}else{5});}
         f.panels.push(Panel::new(rect,axes));rectangles.push([rect.x/f.width_mm,rect.y/f.height_mm,rect.width/f.width_mm,rect.height/f.height_mm]);
         let mut label=WebLayout::new(80.,16.)?.figure(24.)?;label.latex.cache=cache.into();
+        label.background=f.background;
         label.labels.push(Label::new(name,label.width_mm/2.,label.height_mm/2.));panel_labels.push(label.svg()?);
     }
     // A single native palette supplies both the GPU field and the colorbar.

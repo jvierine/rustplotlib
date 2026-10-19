@@ -781,6 +781,8 @@ pub struct Figure {
     pub width_mm: f64,
     pub height_mm: f64,
     pub font_pt: f64,
+    /// Figure paper color as RGB components, each in [0, 1].
+    pub background: [f64; 3],
     pub panels: Vec<Panel>,
     pub colorbars: Vec<Colorbar>,
     pub labels: Vec<Label>,
@@ -963,6 +965,7 @@ impl Figure {
             check_label_geometry: true,
             auto_colorbar_layout: true,
             colorbar_gap_em: 0.6,
+            background: [1.; 3],
         }
     }
     pub fn scale(&mut self, s: Scale) -> usize {
@@ -1002,6 +1005,8 @@ impl Figure {
         Ok(ids)
     }
     fn validate(&self) -> Result<()> {
+        ensure!(self.background.iter().all(|c| c.is_finite() && (0.0..=1.0).contains(c)),
+            "Invalid figure background color");
         if let Some(contract) = self.article_contract {
             contract.validate(self)?;
         }
@@ -1288,8 +1293,12 @@ impl Figure {
         let r = legend.place(panel.rect, width, height, &occupied)?;
         write!(
             svg,
-            "<g data-role=\"legend\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"0.8\" fill=\"white\" fill-opacity=\"{}\"/>",
-            r.x, r.y, r.width, r.height, legend.background_opacity
+            "<g data-role=\"legend\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"0.8\" fill=\"rgb({},{},{})\" fill-opacity=\"{}\"/>",
+            r.x, r.y, r.width, r.height,
+            (self.background[0]*255.).round() as u8,
+            (self.background[1]*255.).round() as u8,
+            (self.background[2]*255.).round() as u8,
+            legend.background_opacity
         )?;
         for (i, entry) in legend.entries.iter().enumerate() {
             let x = r.x + legend.padding_mm + offsets[i % legend.columns];
@@ -1550,8 +1559,11 @@ impl Figure {
 
     fn svg_with_glyphs(&self, glyphs: &BTreeMap<String, Glyph>) -> Result<String> {
         let mut s = format!(
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"{}mm\" height=\"{}mm\" viewBox=\"0 0 {} {}\"><rect width=\"100%\" height=\"100%\" fill=\"white\"/>",
-            self.width_mm, self.height_mm, self.width_mm, self.height_mm
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"{}mm\" height=\"{}mm\" viewBox=\"0 0 {} {}\"><rect width=\"100%\" height=\"100%\" fill=\"rgb({},{},{})\"/>",
+            self.width_mm, self.height_mm, self.width_mm, self.height_mm,
+            (self.background[0]*255.).round() as u8,
+            (self.background[1]*255.).round() as u8,
+            (self.background[2]*255.).round() as u8
         );
         let mut serial = 0;
         let mut label_bounds: Vec<(String, [f64; 4])> = vec![];
