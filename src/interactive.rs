@@ -90,7 +90,7 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
         let rect=if single_hsv{Rect::new(if key_below{(f.width_mm-square)/2.}else{20.},7.,square,square)}else if n==1{Rect::new(20.,7.,f.width_mm-50.,f.height_mm-24.)}
             else{Rect::new(20.,4.+i as f64*32.,f.width_mm-if spec.hsv_key.is_some()&&!key_below{110.}else{50.},30.)};
         let mut axes=Axes::new([x0,x1],[y0,y1],&spec.xlabel,if i==n/2{&spec.ylabel}else{""});
-        axes.show_x_axis=i==n-1;axes.yticks=nice_ticks(y0,y1,4);
+        axes.show_x_axis=i==n-1;axes.yticks=nice_ticks(y0,y1,5);
         if let Some(origin)=spec.utc_origin_seconds{
             let (ticks,labels)=utc_ticks(x0,x1,origin,rect.width*96./25.4);axes.xticks=ticks;axes.xticklabels=Some(labels);
         }else{axes.xticks=nice_ticks(x0,x1,if request.width<500.{3}else{5});}
