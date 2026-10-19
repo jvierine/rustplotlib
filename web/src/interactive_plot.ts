@@ -18,6 +18,8 @@ export class InteractiveFieldPlot{
  private resetButton=document.createElement('button');
  private observer:ResizeObserver;
  private limits:[number,number];
+ private initialLimits:[number,number];
+ private initialMomentLimits:[number,number];
  private revision=0;private timer?:number;private abort?:AbortController;
  private frame?:Frame;private frameURL?:string;private labelURLs:string[]=[];
  private drag?:{panel:number;x:number;y:number;lastX:number;lastY:number;pan:boolean};
@@ -31,19 +33,20 @@ export class InteractiveFieldPlot{
   const s=options.spec;
   if(!s.xlabel?.trim()||!s.ylabel?.trim()||!s.colorbar_label?.trim())throw Error('Interactive plots require x, y and colorbar labels');
   if(!s.panels.length||s.bounds.length!==4||!s.bounds.every(Number.isFinite))throw Error('Invalid interactive figure specification');
-  this.onSelect=options.onSelect;this.limits=options.colorLimits||[0,1];this.momentMode=options.frameParameters?.hsv===1;
-  const toolbar=document.createElement('div');toolbar.style.cssText='display:flex;gap:12px;align-items:center;font:inherit;margin:6px 0';
+  this.onSelect=options.onSelect;this.limits=[...(options.colorLimits||[0,1])];this.initialLimits=[...this.limits];this.momentMode=options.frameParameters?.hsv===1;
+  this.initialMomentLimits=[options.frameParameters?.velocity_limit||30,options.frameParameters?.width_limit||10];
+  const toolbar=document.createElement('div');toolbar.style.cssText='display:flex;flex-wrap:wrap;gap:10px;align-items:center;font:inherit;margin:0 6px 10px;color:var(--muted,#526b7d)';
   this.resetButton.textContent='Reset view';this.resetButton.onclick=()=>this.reset();
-  const help=document.createElement('span');help.textContent='Wheel: zoom · drag: box zoom · Shift-drag: pan · double-click: reset';help.style.fontSize='0.875em';
+  const help=document.createElement('span');help.textContent='Scroll to zoom · drag to zoom · Shift-drag to pan · click colorbar to adjust';help.style.fontSize='0.75rem';
   toolbar.append(this.resetButton,help);root.append(toolbar);root.style.overflowX='auto';
-  this.stage.style.cssText='position:relative;background:white;touch-action:none';this.axes.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
+  this.stage.style.cssText='position:relative;background:var(--paper,white);touch-action:none';this.axes.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
   this.axes.alt=`${s.ylabel} versus ${s.xlabel}; ${s.colorbar_label}`;this.stage.append(this.axes);root.append(this.stage);
   s.panels.forEach((name,index)=>{const canvas=document.createElement('canvas');canvas.width=10;canvas.height=10;canvas.tabIndex=0;
    canvas.setAttribute('aria-label',`${name}; ${s.ylabel} versus ${s.xlabel}`);canvas.style.cssText='position:absolute;z-index:1;touch-action:none';
    const label=document.createElement('img');label.alt=name;label.style.cssText='position:absolute;width:80px;height:24px;z-index:2;pointer-events:none';
    this.stage.append(canvas,label);const panel=new InteractiveFieldPanel(this,canvas,label,index);this.panels.push(panel);this.bind(panel);
   });
-  this.selectionBox.style.cssText='display:none;position:absolute;z-index:3;border:1px dashed #1d5577;background:#3e97bc22;pointer-events:none';this.stage.append(this.selectionBox);
+  this.selectionBox.style.cssText='display:none;position:absolute;z-index:3;border:1px dashed var(--blue,#1d5577);background:#63a8c922;pointer-events:none';this.stage.append(this.selectionBox);
   this.observer=new ResizeObserver(()=>this.queueFrame());
  }
  static async mount(root:HTMLElement,options:Options){initialization??=init();await initialization;
@@ -57,24 +60,29 @@ export class InteractiveFieldPlot{
   if(this.momentLimits?.[0]===velocity&&this.momentLimits?.[1]===width)return;this.momentLimits=[velocity,width];this.panels.forEach(p=>p.applyHsvLimits(velocity,width));this.queueFrame();}
  private openColorEditor(){
   this.editor?.remove();const dialog=document.createElement('dialog');this.editor=dialog;dialog.setAttribute('aria-label','Adjust color limits');
-  dialog.style.cssText='position:fixed;max-width:min(480px,90vw);padding:20px;border:1px solid #8b99aa;border-radius:7px;background:white;color:#172134;font:16px system-ui;box-shadow:0 8px 30px #0004';
-  const title=document.createElement('h2');title.textContent='Color limits';title.style.cssText='font:inherit;font-weight:600;margin:0 0 14px';dialog.append(title);
+  dialog.style.cssText='position:fixed;box-sizing:border-box;width:min(440px,calc(100vw - 32px));max-width:none;max-height:calc(100dvh - 32px);overflow:auto;padding:24px;border:1px solid var(--line,#8b99aa);border-radius:10px;background:var(--paper,white);color:var(--ink,#172134);font:15px system-ui;box-shadow:0 12px 40px #0003';
+  const title=document.createElement('h2');title.textContent='Color scale';title.style.cssText='font:inherit;font-size:1.15em;font-weight:600;margin:0 0 6px';dialog.append(title);
+  const description=document.createElement('p');description.textContent=this.options.spec.colorbar_label;description.style.cssText='margin:0 0 18px;color:var(--muted,#526b7d)';dialog.append(description);
   const span=this.limits[1]-this.limits[0],base:[number,number]=[this.limits[0]-4*span,this.limits[1]+4*span];
-  const row=(label:string,value:number,min:number,max:number,step:number,apply:(value:number)=>void)=>{
-   const line=document.createElement('label');line.style.cssText='display:grid;grid-template-columns:130px 160px 80px;gap:8px;align-items:center;margin:12px 0';
-   const text=document.createElement('span');text.textContent=label;
+  const row=(label:string,value:number,min:number,max:number,step:number,apply:(value:number)=>boolean)=>{
+   const line=document.createElement('label');line.style.cssText='display:grid;grid-template-columns:minmax(0,1fr) 90px;gap:8px;align-items:center;margin:16px 0';
+   const text=document.createElement('span');text.textContent=label;text.style.gridColumn='1 / -1';
    const slider=document.createElement('input');slider.type='range';slider.min=String(min);slider.max=String(max);slider.step=String(step);slider.value=String(value);slider.setAttribute('aria-label',label);
-   const number=document.createElement('input');number.type='number';number.step='any';number.value=String(value);number.setAttribute('aria-label',label+' value');number.style.width='75px';
-   slider.oninput=()=>{number.value=slider.value;apply(+slider.value);};number.onchange=()=>{if(Number.isFinite(+number.value)){slider.value=number.value;apply(+number.value);}};
+   slider.style.cssText='min-width:0;width:100%;margin:0';
+   const number=document.createElement('input');number.type='number';number.step='any';number.value=String(value);number.setAttribute('aria-label',label+' value');number.style.cssText='box-sizing:border-box;min-width:0;width:100%';
+   const update=()=>{const v=number.valueAsNumber,valid=Number.isFinite(v)&&apply(v);number.setCustomValidity(valid?'':'Enter a finite value; maximum must exceed minimum and HSV limits must be positive.');number.setAttribute('aria-invalid',String(!valid));if(valid){slider.min=String(Math.min(+slider.min,v));slider.max=String(Math.max(+slider.max,v));slider.value=String(v);}};
+   slider.oninput=()=>{number.value=slider.value;update();};number.oninput=update;
    line.append(text,slider,number);dialog.append(line);
   };
-  row('Minimum',this.limits[0],base[0],base[1],span/500,v=>{if(v<this.limits[1])this.setColorLimits(v,this.limits[1]);});
-  row('Maximum',this.limits[1],base[0],base[1],span/500,v=>{if(v>this.limits[0])this.setColorLimits(this.limits[0],v);});
+  row('Minimum',this.limits[0],base[0],base[1],span/500,v=>{if(v>=this.limits[1])return false;this.setColorLimits(v,this.limits[1]);return true;});
+  row('Maximum',this.limits[1],base[0],base[1],span/500,v=>{if(v<=this.limits[0])return false;this.setColorLimits(this.limits[0],v);return true;});
   if(this.momentMode){const limits=this.momentLimits||[this.options.frameParameters?.velocity_limit||30,this.options.frameParameters?.width_limit||10];
-   row('Velocity +/- m/s',limits[0],.1,Math.max(limits[0]*4,200),.1,v=>{if(v>0)this.setHsvLimits(v,(this.momentLimits||limits)[1]);});
-   row('Width m/s',limits[1],.1,Math.max(limits[1]*4,100),.1,v=>{if(v>0)this.setHsvLimits((this.momentLimits||limits)[0],v);});
+   row('Velocity +/- m/s',limits[0],.1,Math.max(limits[0]*4,200),.1,v=>{if(v<=0)return false;this.setHsvLimits(v,(this.momentLimits||limits)[1]);return true;});
+   row('Width m/s',limits[1],.1,Math.max(limits[1]*4,100),.1,v=>{if(v<=0)return false;this.setHsvLimits((this.momentLimits||limits)[0],v);return true;});
   }
-  const close=document.createElement('button');close.textContent='Done';close.onclick=()=>dialog.close();dialog.append(close);document.body.append(dialog);
+  const actions=document.createElement('div');actions.style.cssText='display:flex;justify-content:space-between;gap:12px;margin-top:24px';
+  const reset=document.createElement('button');reset.textContent='Reset scale';reset.onclick=()=>{this.setColorLimits(...this.initialLimits);if(this.momentMode)this.setHsvLimits(...this.initialMomentLimits);this.openColorEditor();};
+  const close=document.createElement('button');close.textContent='Done';close.onclick=()=>dialog.close();actions.append(reset,close);dialog.append(actions);document.body.append(dialog);
   dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();const e=event as MouseEvent;if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
   dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal();
  }
@@ -105,7 +113,7 @@ export class InteractiveFieldPlot{
   });
   this.axes.style.visibility='visible';this.root.removeAttribute('data-plot-error');
   this.colorButtons.forEach(b=>b.remove());this.colorButtons=[];
-  (frame.color_regions||[]).forEach(([x,y,w,h])=>{const button=document.createElement('button');button.setAttribute('aria-label','Adjust color limits');button.title='Click to adjust color limits';
+  (frame.color_regions||[]).forEach(([x,y,w,h])=>{const button=document.createElement('button');button.type='button';button.setAttribute('aria-label','Adjust color limits');button.setAttribute('aria-haspopup','dialog');button.title=`Adjust ${this.options.spec.colorbar_label} color scale`;
    button.style.cssText=`position:absolute;left:${x*100}%;top:${y*100}%;width:${Math.max(24,w*frame.width)}px;height:${h*100}%;z-index:4;background:transparent;border:0;padding:0;cursor:pointer`;button.onclick=()=>this.openColorEditor();this.stage.append(button);this.colorButtons.push(button);});
  }
  private point(panel:InteractiveFieldPanel,event:MouseEvent){const r=panel.canvas.getBoundingClientRect();return [clamp((event.clientX-r.left)/r.width),clamp(1-(event.clientY-r.top)/r.height)];}

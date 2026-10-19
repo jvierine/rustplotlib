@@ -60,3 +60,11 @@ click-position guesses are needed: hit regions come from the native figure.
 Moment-data calls automatically select the HSV key; scalar data selects the
 scalar bar. Preserve per-plot styles across data refreshes instead of resetting
 limits in the host on every redraw.
+
+The editor is keyboard-accessible through the colorbar button, fits narrow
+screens, shows the registered field label/units, and validates limits without
+changing the plot for incomplete or invalid input. Sliders and numeric inputs
+both apply immediately. **Reset scale** restores the limits supplied at mount
+(including HSV velocity/width defaults); it does not reset the viewport.
+The shared controls inherit optional host CSS variables `--paper`, `--ink`,
+`--muted`, `--line`, and `--blue`, retaining neutral defaults when unset.
