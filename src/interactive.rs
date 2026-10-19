@@ -8,6 +8,9 @@ use std::path::Path;
 
 #[derive(Clone,Debug,Serialize,Deserialize)]
 pub struct InteractiveFieldSpec {
+    /// Optional sequential RGB stops shared by the native colorbar and GPU field.
+    #[serde(default)]
+    pub color_stops:Option<Vec<[f64;3]>>,
     #[serde(default)]
     pub equal_aspect:bool,
     #[serde(default)]
@@ -108,8 +111,12 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
         label.labels.push(Label::new(name,label.width_mm/2.,label.height_mm/2.));panel_labels.push(label.svg()?);
     }
     // A single native palette supplies both the GPU field and the colorbar.
-    let plasma=ColorMap::plasma();
-    let palette=ColorMap::new((0..32).map(|i|plasma.stops[i*255/31]).collect())?;
+    let palette=if let Some(stops)=&spec.color_stops {
+        ColorMap::new(stops.clone())?
+    }else{
+        let plasma=ColorMap::plasma();
+        ColorMap::new((0..32).map(|i|plasma.stops[i*255/31]).collect())?
+    };
     let color_stops=palette.stops.iter().flatten().map(|x|*x as f32).collect();
     f.scales.push(Scale::new(request.color_limits,Normalization::Linear,palette)?);
     let r=f.panels[0].rect;let end=f.panels.last().unwrap().rect;
