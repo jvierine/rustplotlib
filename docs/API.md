@@ -315,3 +315,27 @@ physical points across unequal axis ranges and panel aspect ratios. Nonfinite
 positions are skipped; invalid sizes and colors return errors. Error-bar stems
 can use `Line` with the cap shapes at their endpoints. Symbols are ordinary
 layers and participate in legend data avoidance.
+# Browser axes and curves
+
+`SeriesView.axes` uses CSS-pixel dimensions and the default Pagella/Palatino
+font. It draws a white panel, ticks, and axis labels. Bounds are
+`[xmin, xmax, ymin, ymax]`. Use `format: "utc"` for seconds since UTC midnight
+or Unix seconds, and `format: "log10"` for coordinates already in log10 units.
+
+```js
+view.axes({
+  width: 640, height: 300, dpr: devicePixelRatio,
+  bounds: [15 * 3600, 21 * 3600, 100, 600],
+  x: { label: "Time / UTC", format: "utc" },
+  y: { label: "Altitude / km" }
+});
+view.series(xy, "#236b8e", true, 2);
+view.segments(errorBars, "#7b929e"); // x0,y0,x1,y1 per bar
+view.band(uncertainty, "#236b8e4d"); // x,lower,upper per sample
+```
+
+`axes_rect()` returns `[left, top, width, height]` for pointer navigation or
+an aligned `FieldView`. Optional margins are `[left, top, right, bottom]`.
+`markers` supports filled circles, open circles and left/right limit markers.
+Missing samples break curves and uncertainty bands. A diverging field scale
+keeps zero at the centre colour when its limits straddle zero.
