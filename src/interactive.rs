@@ -110,8 +110,8 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
             let y=if single_hsv{r.y+r.height+22.}else{end.y+end.height+24.};let w=(f.width_mm-50.)/2.;
             key.add_to(&mut f,Rect::new(20.,y,w,20.),Rect::new(45.+w,y,w,20.))?;
         }else{
-            let x=r.x+r.width+25.;let w=f.width_mm-x-7.;let h=if single_hsv{(square-18.)/2.}else{30.};
-            key.add_to(&mut f,Rect::new(x,r.y,w,h),Rect::new(x,r.y+h+18.,w,h))?;
+            let x=r.x+r.width+25.;let w=f.width_mm-x-7.;let h=if single_hsv{(square-18.)/2.}else{30.};let top=r.y.max(7.);
+            key.add_to(&mut f,Rect::new(x,top,w,h),Rect::new(x,top+h+18.,w,h))?;
         }
     }else{
         f.colorbars.push(Colorbar::new(Rect::new(r.x+r.width+3.,r.y,3.,end.y+end.height-r.y),0,&spec.colorbar_label,ticks));
