@@ -156,7 +156,7 @@ impl SeriesView {
                 x0,
                 x1,
                 &a.x.format,
-                ((w / 90.).floor() as usize).clamp(2, 8),
+                ((w / 65.).floor() as usize).clamp(4, 8),
             ) {
                 let x = self.px(v);
                 c.begin_path();
