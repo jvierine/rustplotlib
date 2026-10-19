@@ -41,7 +41,7 @@ impl HsvColorKey {
                 if kind==1{r"Velocity (m s$^{-1}$)"}else{""},ylabel);
             axes.xticks=vec![-self.velocity_limit,0.,self.velocity_limit];
             axes.yticks=if kind==0{vec![ylim[0],(ylim[0]+ylim[1])/2.,ylim[1]]}else{vec![0.,self.width_limit/2.,self.width_limit]};
-            axes.show_x_axis=kind==1;
+            axes.show_x_axis=kind==1 || power_rect.y==width_rect.y;
             let mut panel=Panel::new(rect,axes);
             let image=image::RgbaImage::from_fn(256,96,|x,y|{
                 let velocity=-self.velocity_limit+2.*self.velocity_limit*x as f64/255.;
