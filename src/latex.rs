@@ -13,6 +13,9 @@ static JOB_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 #[derive(Clone, Debug)]
 pub struct Latex {
     pub cache: PathBuf,
+    /// Complete LaTeX preamble. Defaults load `amsmath` and `amssymb`, followed
+    /// by Palatino text/math fonts. Append custom commands/packages to retain
+    /// those defaults; replacing this string replaces the whole preamble.
     pub preamble: String,
     pub font_pt: f64,
 }

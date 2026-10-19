@@ -97,9 +97,30 @@ is not a dependency and must not supply figure layouts, axes, annotations,
 transforms or graphics scenes. Native figure builders own those operations.
 
 Labels accept LaTeX directly: `$\omega=\nabla\times\boldsymbol{u}$`.
-`latex::text()` escapes ordinary text. Set `figure.latex.preamble` to use a
-different font family or packages. Defaults are Palatino text and mathematics
-via `mathpazo`, with AMS mathematics. All uncached labels are compiled together;
+**`amsmath` and `amssymb` are loaded by default**, alongside Palatino text and
+mathematics via `mathpazo`. This includes `aligned`, `gathered`, `cases`,
+`pmatrix`/`bmatrix`, `\boldsymbol`, `\operatorname`, `\mathbb`, `\mathfrak`,
+and AMS relation symbols. Use math delimiters around inline math structures:
+
+```rust
+let equation = Label::new(
+    r"$\begin{aligned}\partial_t n+\nabla\cdot(n\boldsymbol{u})&=S-L\\\boldsymbol{u}&\in\mathbb{R}^{3}\end{aligned}$",
+    45., 25.,
+);
+figure.labels.push(equation);
+figure.latex.preamble.push_str(r"\newcommand{\wind}{\boldsymbol{u}}");
+```
+
+Display environments such as `align*` already establish math mode: do not wrap
+them in `$...$`. `latex::text()` escapes ordinary text, including dollar signs
+and backslashes; do not pass equations through it. Append packages or macros
+with `figure.latex.preamble.push_str(...)` to retain the defaults. Assigning a
+new preamble replaces the complete preamble, including the AMS packages.
+Run `cargo run --example ams_math` for a vector PDF/SVG and PNG export example.
+The same compiled glyph paths can be served in web plots; the browser needs
+neither a TeX installation nor a substitute math renderer.
+
+All uncached labels are compiled together;
 glyph outlines are cached by label, preamble and point size. Delete the cache
 after upgrading TeX or fonts. No browser math approximation is used.
 

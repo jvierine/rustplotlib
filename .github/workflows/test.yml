@@ -27,6 +27,7 @@ jobs:
       - run: cargo run --release --example publication
       - run: cargo run --release --example gallery
       - run: cargo run --release --example secondary_axis
+      - run: cargo run --release --example ams_math
       - run: cargo run --release --features hdf5-examples --example syisr_khi
       - run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
       - run: npm ci && npx playwright install --with-deps chromium && npm run build && npx tsc --noEmit
@@ -43,6 +44,7 @@ jobs:
           path: |
             gallery/
             validation/
+            output/pdf/ams-math.*
 
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
