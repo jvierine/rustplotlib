@@ -1,7 +1,7 @@
 //! Multivariate radar color mapping and native, three-variable color keys.
 //! The two key slices show hue/value at zero width, and hue/saturation at
 //! maximum power. Together they explain HSV without a misleading scalar bar.
-use crate::{Axes,Figure,Layer,Panel,Rect};
+use crate::{Axes,Figure,Label,Layer,Panel,Rect};
 use anyhow::{Result,ensure};
 use serde::{Deserialize,Serialize};
 
@@ -34,6 +34,7 @@ impl HsvColorKey {
     pub fn add_to(&self,figure:&mut Figure,power_rect:Rect,width_rect:Rect)->Result<()> {
         self.validate()?;
         for (kind,rect) in [power_rect,width_rect].into_iter().enumerate() {
+            figure.labels.push(Label::new(if kind==0{"Zero spectral width"}else{"Maximum brightness"},rect.x+rect.width/2.,rect.y-4.));
             let ylim=if kind==0{self.power_limits}else{[0.,self.width_limit]};
             let ylabel=if kind==0{self.power_label.clone()}else{r"Width (m s$^{-1}$)".into()};
             let mut axes=Axes::new([-self.velocity_limit,self.velocity_limit],ylim,
@@ -59,11 +60,10 @@ impl HsvColorKey {
     use super::*;
     #[test]fn colors_match_shader_and_three_encodings(){
         let key=HsvColorKey{velocity_limit:30.,width_limit:10.,power_limits:[-30.,0.],power_label:"Power (dB)".into()};
-        assert_eq!(key.rgb(0.,-30.,0.),[0.,0.,1.]);
-        assert_eq!(key.rgb(0.,0.,0.),[0.,1.,0.]);
-        assert_eq!(key.rgb(0.,30.,0.),[1.,0.,0.]);
-        assert_eq!(key.rgb(-30.,30.,0.),[0.,0.,0.]);
-        assert_eq!(key.rgb(-15.,30.,0.),[0.5,0.,0.]);
+        for (power,velocity,expected) in [(0.,-30.,[0.,0.,1.]),(0.,0.,[0.,1.,0.]),
+            (0.,30.,[1.,0.,0.]),(-30.,30.,[0.,0.,0.]),(-15.,30.,[0.5,0.,0.])] {
+            for (a,b) in key.rgb(power,velocity,0.).iter().zip(expected) {assert!((a-b).abs()<1e-12);}
+        }
         assert!((key.rgb(0.,30.,10.)[1]-0.85).abs()<1e-12);
     }
 }
