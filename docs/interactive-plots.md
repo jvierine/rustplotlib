@@ -38,3 +38,15 @@ they cannot incorrectly label the new data view. Stale responses are discarded.
 The host supplies arrays and scientific metadata, not tick positions or event
 handlers. A missing native frame service fails visibly rather than silently
 falling back to custom labels or an undecorated texture.
+
+## Three-variable HSV keys
+
+Use native `HsvColorKey` for moment images rather than a scalar palette bar.
+It owns velocity hue, width desaturation and power value limits and generates
+two linked native color-key panels: velocity/power at zero width and
+velocity/width at maximum power. `rgb()` matches the moment shader exactly.
+`HsvColorKey::add_to` is also available for ordinary saved Rust figures.
+Registered interactive specifications can supply `hsv_key`; the complete plot
+then uses a compact equal-aspect data panel beside this multivariable legend.
+Update numerical frame parameters when hue/width limits change, so the native
+key changes with the GPU image. Scientific labels and units are still native.

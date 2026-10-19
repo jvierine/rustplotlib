@@ -47,6 +47,7 @@ export class InteractiveFieldPlot{
  setColorLimits(low:number,high:number){if(!Number.isFinite(low)||!Number.isFinite(high)||high<=low)throw Error('Invalid color limits');
   if(this.limits[0]===low&&this.limits[1]===high)return;this.limits=[low,high];this.panels.forEach(p=>p.field.set_scale(low,high,0,.1,2));this.queueFrame();}
  setSpec(spec:FieldSpec){this.options.spec=spec;this.reset();}
+ setFrameParameters(parameters:Record<string,number>){this.options.frameParameters=parameters;this.queueFrame();}
  reset(){this.viewport.reset();this.changed();}
  physicalBounds(){const v=this.viewport.bounds(),b=this.options.spec.bounds;return [b[0]+v[0]*(b[2]-b[0]),b[1]+v[1]*(b[3]-b[1]),b[0]+v[2]*(b[2]-b[0]),b[1]+v[3]*(b[3]-b[1])];}
  applyView(){this.panels.forEach(p=>p.applyView());}
@@ -67,7 +68,7 @@ export class InteractiveFieldPlot{
   frame.panels.forEach(([x,y,w,h],i)=>{const p=this.panels[i];
    Object.assign(p.canvas.style,{left:x*100+'%',top:y*100+'%',width:w*100+'%',height:h*100+'%'});
    const dpr=Math.min(devicePixelRatio||1,2);p.canvas.width=Math.max(2,Math.round(w*frame.width*dpr));p.canvas.height=Math.max(2,Math.round(h*frame.height*dpr));
-   const url=svgURL(frame.panel_labels[i]);this.labelURLs.push(url);p.label.src=url;p.label.style.left=`calc(${x*100}% + 4px)`;p.label.style.top=`calc(${y*100}% + 4px)`;
+   const url=svgURL(frame.panel_labels[i]);this.labelURLs.push(url);p.label.src=url;p.label.style.display=this.options.spec.panels[i]?'block':'none';p.label.style.left=`calc(${x*100}% + 4px)`;p.label.style.top=`calc(${y*100}% + 4px)`;
    p.field.set_scale(this.limits[0],this.limits[1],0,.1,2);p.applyView();
   });
   this.axes.style.visibility='visible';this.root.removeAttribute('data-plot-error');

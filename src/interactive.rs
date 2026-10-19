@@ -10,6 +10,8 @@ use std::path::Path;
 pub struct InteractiveFieldSpec {
     #[serde(default)]
     pub equal_aspect:bool,
+    #[serde(default)]
+    pub hsv_key:Option<crate::HsvColorKey>,
     /// Physical x0,y0,x1,y1, independent of texture dimensions.
     pub bounds:[f64;4],
     pub xlabel:String,
@@ -71,14 +73,18 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
     let b=request.viewport;
     ensure!(b[0]>=0.&&b[1]>=0.&&b[2]<=1.&&b[3]<=1.&&b[2]>b[0]&&b[3]>b[1],"Invalid normalized viewport");
     ensure!(spec.bounds[2]>spec.bounds[0]&&spec.bounds[3]>spec.bounds[1]&&request.color_limits[1]>request.color_limits[0],"Invalid physical limits");
-    let n=spec.panels.len();let height=if n==1 && spec.equal_aspect {request.width-26.*96./25.4} else if n==1{300.}else{n as f64*121.+95.};
-    let mut f=WebLayout::new(request.width,16.)?.figure(height)?;f.latex.cache=cache.into();
+    let n=spec.panels.len();
+    let single_hsv=n==1&&spec.hsv_key.is_some();
+    let width=if single_hsv{request.width.clamp(800.,840.)}else if spec.hsv_key.is_some(){request.width.max(900.)}else{request.width};
+    let square=if single_hsv{((width*25.4/96.-82.)*0.58).min(80.)}else{0.};
+    let height=if single_hsv{(square+32.)*96./25.4}else if n==1 && spec.equal_aspect {width-26.*96./25.4} else if n==1{300.}else{n as f64*121.+95.};
+    let mut f=WebLayout::new(width,16.)?.figure(height)?;f.latex.cache=cache.into();
     let x0=spec.bounds[0]+b[0]*(spec.bounds[2]-spec.bounds[0]);let x1=spec.bounds[0]+b[2]*(spec.bounds[2]-spec.bounds[0]);
     let y0=spec.bounds[1]+b[1]*(spec.bounds[3]-spec.bounds[1]);let y1=spec.bounds[1]+b[3]*(spec.bounds[3]-spec.bounds[1]);
     let mut rectangles=vec![];let mut panel_labels=vec![];
     for (i,name) in spec.panels.iter().enumerate(){
-        let rect=if n==1{Rect::new(20.,7.,f.width_mm-50.,f.height_mm-24.)}
-            else{Rect::new(20.,4.+i as f64*32.,f.width_mm-50.,30.)};
+        let rect=if single_hsv{Rect::new(20.,7.,square,square)}else if n==1{Rect::new(20.,7.,f.width_mm-50.,f.height_mm-24.)}
+            else{Rect::new(20.,4.+i as f64*32.,f.width_mm-if spec.hsv_key.is_some(){110.}else{50.},30.)};
         let mut axes=Axes::new([x0,x1],[y0,y1],&spec.xlabel,if i==n/2{&spec.ylabel}else{""});
         axes.show_x_axis=i==n-1;axes.yticks=nice_ticks(y0,y1,4);
         if let Some(origin)=spec.utc_origin_seconds{
@@ -94,9 +100,14 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
     let mut ticks=nice_ticks(request.color_limits[0],request.color_limits[1],5);
     if !ticks.contains(&request.color_limits[0]){ticks.insert(0,request.color_limits[0]);}
     if !ticks.contains(&request.color_limits[1]){ticks.push(request.color_limits[1]);}
-    f.colorbars.push(Colorbar::new(Rect::new(r.x+r.width+3.,r.y,3.,end.y+end.height-r.y),0,&spec.colorbar_label,ticks));
+    if let Some(key)=&spec.hsv_key {
+        let x=r.x+r.width+25.;let w=f.width_mm-x-7.;let h=if single_hsv{(square-18.)/2.}else{30.};
+        key.add_to(&mut f,Rect::new(x,r.y,w,h),Rect::new(x,r.y+h+18.,w,h))?;
+    }else{
+        f.colorbars.push(Colorbar::new(Rect::new(r.x+r.width+3.,r.y,3.,end.y+end.height-r.y),0,&spec.colorbar_label,ticks));
+    }
     f.layout_colorbars()?;let svg=f.svg()?;
-    Ok(InteractiveFrame{svg,width:request.width,height,panels:rectangles,panel_labels})
+    Ok(InteractiveFrame{svg,width,height,panels:rectangles,panel_labels})
 }
 
 #[cfg(test)]mod tests{

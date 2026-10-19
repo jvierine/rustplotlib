@@ -12,6 +12,8 @@ pub mod article;
 pub use article::ArticleLayout;
 pub mod web_layout;
 pub mod interactive;
+pub mod hsv;
+pub use hsv::HsvColorKey;
 pub use web_layout::WebLayout;
 pub mod figure;
 pub mod latex;
