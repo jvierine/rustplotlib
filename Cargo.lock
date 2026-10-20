@@ -879,9 +879,11 @@ dependencies = [
 name = "rustplotlib-web"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "js-sys",
  "serde",
  "serde-wasm-bindgen",
+ "serde_json",
  "wasm-bindgen",
  "web-sys",
 ]
