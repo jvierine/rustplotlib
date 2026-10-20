@@ -82,6 +82,16 @@ fn utc_ticks(lo:f64,hi:f64,origin:f64,width:f64)->(Vec<f64>,Vec<String>){
     (values,labels)
 }
 
+fn colorbar_ticks(lo:f64,hi:f64)->Vec<f64>{
+    // Endpoints describe the actual clipping limits, but must replace nearby
+    // rounded ticks instead of colliding with them (e.g. 12.5 beside 13).
+    let margin=(hi-lo)*0.12;
+    let mut ticks=vec![lo];
+    ticks.extend(nice_ticks(lo,hi,5).into_iter().filter(|v|*v>lo+margin&&*v<hi-margin));
+    ticks.push(hi);
+    ticks
+}
+
 /// Default native axis factory. Decorations cannot silently be omitted.
 pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)->Result<InteractiveFrame>{
     ensure!(spec.bounds.iter().chain(request.viewport.iter()).chain(request.color_limits.iter()).all(|x|x.is_finite()),"Nonfinite bounds");
@@ -125,9 +135,7 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
     let color_stops=palette.stops.iter().flatten().map(|x|*x as f32).collect();
     f.scales.push(Scale::new(request.color_limits,Normalization::Linear,palette)?);
     let r=f.panels[0].rect;let end=f.panels.last().unwrap().rect;
-    let mut ticks=nice_ticks(request.color_limits[0],request.color_limits[1],5);
-    if !ticks.contains(&request.color_limits[0]){ticks.insert(0,request.color_limits[0]);}
-    if !ticks.contains(&request.color_limits[1]){ticks.push(request.color_limits[1]);}
+    let ticks=colorbar_ticks(request.color_limits[0],request.color_limits[1]);
     if let Some(key)=&spec.hsv_key {
         if key_below {
             let y=if single_hsv{r.y+r.height+22.}else{end.y+end.height+24.};let w=(f.width_mm-50.)/2.;
@@ -162,4 +170,12 @@ pub fn field_frame(spec:&InteractiveFieldSpec,request:&FrameRequest,cache:&Path)
         }
     }
     #[test]fn utc_ticks_follow_zoom(){let(t,l)=utc_ticks(0.,1.,0.,500.);assert_eq!(l,vec!["00:00","00:30","01:00"]);assert_eq!(t,vec![0.,0.5,1.]);}
+    #[test]fn colorbar_endpoints_replace_nearby_rounded_ticks(){
+        assert_eq!(colorbar_ticks(3.,13.),vec![3.,5.,7.5,10.,13.]);
+        for (lo,hi) in [(3.,6.),(3.,13.),(3.,30.),(-30.,0.),(3.1,13.1)]{
+            let ticks=colorbar_ticks(lo,hi);
+            assert_eq!(ticks.first(),Some(&lo));assert_eq!(ticks.last(),Some(&hi));
+            assert!(ticks.windows(2).all(|v|v[1]-v[0]>=(hi-lo)*0.12));
+        }
+    }
 }
