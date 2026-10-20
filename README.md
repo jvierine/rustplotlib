@@ -112,6 +112,7 @@ a `0.6 em` gap. Horizontal layouts grow vertically when needed. Use
 - Exact seismic/inferno palettes, custom axis tick labels and routed panel connectors.
 - PDF, PNG, JPEG and SVG. Missing values remain missing.
 - Rust/WASM + WebGL2 field and volume renderers, playback and orbit controls.
+- `SeriesGlView`: WebGL2 line/scatter panels with missing-data gaps, CSS-sized markers, clipped viewports and portable triangle-based line widths. `FieldView::set_missing_color` sets the colour of unsupported field cells without filling them.
 
 ## Run
 

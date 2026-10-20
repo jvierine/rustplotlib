@@ -3,6 +3,8 @@ pub use viewport::PlotViewport;
 
 mod series;
 pub use series::SeriesView;
+mod series_gl;
+pub use series_gl::SeriesGlView;
 // Browser GPU rendering; JavaScript only boots WASM and connects controls.
 use wasm_bindgen::prelude::*;
 use web_sys::{
@@ -140,6 +142,13 @@ impl FieldView {
         uniform1(&gl, &p, "normWidth", 0.1);
         uniform_i(&gl, &p, "normMode", 0);
         uniform_i(&gl, &p, "palette", 0);
+        gl.uniform4f(
+            gl.get_uniform_location(&p, "missingColor").as_ref(),
+            1.,
+            1.,
+            1.,
+            1.,
+        );
         uniform2(&gl, &p, "viewLow", 0.0, 0.0);
         uniform2(&gl, &p, "viewHigh", 1.0, 1.0);
         Ok(Self {
@@ -281,6 +290,21 @@ impl FieldView {
         uniform1(&self.gl, &self.p, "normWidth", width);
         uniform_i(&self.gl, &self.p, "palette", palette);
         uniform_i(&self.gl, &self.p, "colorCount", 0);
+        self.draw();
+        Ok(())
+    }
+    /// Colour for unsupported values. Default remains opaque white.
+    pub fn set_missing_color(&self, rgba: &[f32]) -> Result<(), JsValue> {
+        if rgba.len() != 4 || !rgba.iter().all(|v| v.is_finite() && (0. ..=1.).contains(v)) {
+            return Err(error("Invalid missing-value colour"));
+        }
+        self.gl.use_program(Some(&self.p));
+        self.gl.uniform4fv_with_f32_array(
+            self.gl
+                .get_uniform_location(&self.p, "missingColor")
+                .as_ref(),
+            rgba,
+        );
         self.draw();
         Ok(())
     }
