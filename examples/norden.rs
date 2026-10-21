@@ -116,7 +116,10 @@ fn geography(panel: &mut Panel, root: &Path) -> Result<()> {
     Ok(())
 }
 fn globe(rect: Rect) -> Panel {
-    let mut p = Panel::new(rect, Axes::new([-1.015, 1.015], [MAP_BOTTOM, 1.015], "", ""));
+    let mut p = Panel::new(
+        rect,
+        Axes::new([-1.015, 1.015], [MAP_BOTTOM, 1.015], "", ""),
+    );
     p.axes_visible = false;
     p
 }
@@ -131,29 +134,48 @@ fn equivalent_currents(panel: &mut Panel, root: &Path, qd: &Grid) -> Result<(Vec
     for i in 0..lat.len() {
         // Uniform geographic thinning, not selection by current strength.
         // Only overlay the high-latitude UVI region. No opaque backing or halos.
-        if lat[i] < 60. || qd.sample(lon[i], lat[i], 0, false) < 60.
+        if lat[i] < 60.
+            || qd.sample(lon[i], lat[i], 0, false) < 60.
             || ((lat[i] - 46.) / 2.).round() as i32 % 2 != 0
-            || ((lon[i] + 75.) / 5.).round() as i32 % 2 != 0 { continue; }
-        let Some(p) = VIEW.project([lon[i], lat[i]]) else { continue };
+            || ((lon[i] + 75.) / 5.).round() as i32 % 2 != 0
+        {
+            continue;
+        }
+        let Some(p) = VIEW.project([lon[i], lat[i]]) else {
+            continue;
+        };
         let (la, dl) = (lat[i].to_radians(), (lon[i] - 20.).to_radians());
         let (s0, c0) = (60f64.to_radians().sin(), 60f64.to_radians().cos());
         // Orthographic projection of local north/east tangents. Same 0.4 km
         // per A/km vector scale as juha.no/smile, drawn on the map surface.
         let k = 0.4 / 6371.;
         let dx = k * (-north[i] * la.sin() * dl.sin() + east[i] * dl.cos());
-        let dy = k * (north[i] * (c0 * la.cos() + s0 * la.sin() * dl.cos())
-            + east[i] * s0 * dl.sin());
+        let dy =
+            k * (north[i] * (c0 * la.cos() + s0 * la.sin() * dl.cos()) + east[i] * s0 * dl.sin());
         let length = dx.hypot(dy);
-        if length < 1e-12 { continue; }
+        if length < 1e-12 {
+            continue;
+        }
         let tip = [p[0] + dx, p[1] + dy];
         let head = (length * 0.35).min(0.018);
         let (ux, uy) = (dx / length, dy / length);
         line(panel, vec![p, tip], "#246b64", 0.40);
-        line(panel, vec![
-            [tip[0] - head * ux - 0.45 * head * uy, tip[1] - head * uy + 0.45 * head * ux],
-            tip,
-            [tip[0] - head * ux + 0.45 * head * uy, tip[1] - head * uy - 0.45 * head * ux],
-        ], "#246b64", 0.40);
+        line(
+            panel,
+            vec![
+                [
+                    tip[0] - head * ux - 0.45 * head * uy,
+                    tip[1] - head * uy + 0.45 * head * ux,
+                ],
+                tip,
+                [
+                    tip[0] - head * ux + 0.45 * head * uy,
+                    tip[1] - head * uy - 0.45 * head * ux,
+                ],
+            ],
+            "#246b64",
+            0.40,
+        );
         ids.push(i as u64);
         vectors.extend([p[0], p[1], dx, dy]);
     }
@@ -527,10 +549,22 @@ fn main() -> Result<()> {
     fig.save(out.join("norden_smile_mage_globes.png"))?;
     fig.save(out.join("norden_smile_mage_globes.svg"))?;
     let audit = hdf5::File::create(out.join("figure1-rustplotlib-validation.h5"))?;
-    audit.new_dataset_builder().with_data(&current_ids).create("equivalent_current_source_indices")?;
-    audit.new_dataset_builder().with_data(&current_vectors).create("equivalent_current_projected_vectors")?;
-    audit.new_dataset_builder().with_data(&[MAP_BOTTOM, 1.015]).create("map_y_limits")?;
-    audit.new_dataset_builder().with_data(&[170., fig.height_mm]).create("figure_size_mm")?;
+    audit
+        .new_dataset_builder()
+        .with_data(&current_ids)
+        .create("equivalent_current_source_indices")?;
+    audit
+        .new_dataset_builder()
+        .with_data(&current_vectors)
+        .create("equivalent_current_projected_vectors")?;
+    audit
+        .new_dataset_builder()
+        .with_data(&[MAP_BOTTOM, 1.015])
+        .create("map_y_limits")?;
+    audit
+        .new_dataset_builder()
+        .with_data(&[170., fig.height_mm])
+        .create("figure_size_mm")?;
     audit
         .new_dataset_builder()
         .with_data(&ids)

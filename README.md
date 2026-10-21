@@ -182,3 +182,11 @@ the installed HDF5 development library. The example writes PDF, PNG, SVG and
 an HDF5 record of plotted samples. `Axes::xticklabels` / `yticklabels` change
 only displayed text, not coordinates. `Figure::connectors` links data positions
 in two panels through optional millimetre waypoints.
+
+For data-anchored text, `Figure::annotate` measures LaTeX glyphs and chooses a
+position clear of visible geometry and existing labels. For animations with
+fixed labels, call `Figure::check_annotations(&panel, &labels)` on every frame
+after updating the data or camera. It rejects intersections with lines,
+meshes, projected surfaces, and other supplied annotations, including rotated
+text and opaque backgrounds. Check intermediate frames as well as endpoints;
+no placement algorithm can certify a moving scene from a single frame.

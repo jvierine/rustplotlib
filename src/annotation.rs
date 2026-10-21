@@ -150,6 +150,51 @@ impl Figure {
         Ok(index)
     }
 
+    /// Validate fixed annotations against the current projected geometry.
+    /// Call for every animation frame after changing the camera or data. This
+    /// measures actual LaTeX bounds, including rotation and padding, and fails
+    /// rather than hiding a collision behind an opaque label background.
+    /// `annotate` remains the automatic placement API for an individual frame.
+    pub fn check_annotations(&self, panel: &crate::Panel, labels: &[Label]) -> Result<()> {
+        let legend = crate::Legend::new(vec![crate::LegendEntry::circle("annotation", "black")]);
+        let mask = self.legend_occupancy(panel, &legend)?;
+        let w = (panel.rect.width * 4.).ceil() as usize;
+        let glyphs = self.latex.typeset(labels.iter().map(|l| l.latex.clone()))?;
+        let mut boxes: Vec<Rect> = Vec::new();
+        for label in labels {
+            let g = &glyphs[&label.latex];
+            let angle = label.rotation.to_radians();
+            let gw = g.width_pt * 25.4 / 72.27;
+            let gh = g.height_pt * 25.4 / 72.27;
+            let padding = label.padding_mm.max(0.) + 0.5;
+            let rw = gw * angle.cos().abs() + gh * angle.sin().abs() + 2. * padding;
+            let rh = gh * angle.cos().abs() + gw * angle.sin().abs() + 2. * padding;
+            let r = Rect::new(label.x - rw / 2., label.y - rh / 2., rw, rh);
+            ensure!(
+                boxes.iter().all(|b| r.x + r.width < b.x
+                    || b.x + b.width < r.x
+                    || r.y + r.height < b.y
+                    || b.y + b.height < r.y),
+                "Annotation {} overlaps another annotation",
+                label.latex
+            );
+            for (i, occupied) in mask.iter().enumerate() {
+                if !occupied {
+                    continue;
+                }
+                let x = panel.rect.x + (i % w) as f64 / 4.;
+                let y = panel.rect.y + (i / w) as f64 / 4.;
+                ensure!(
+                    x + 0.25 < r.x || x > r.x + r.width || y + 0.25 < r.y || y > r.y + r.height,
+                    "Annotation {} overlaps projected geometry; move it or use annotate",
+                    label.latex
+                );
+            }
+            boxes.push(r);
+        }
+        Ok(())
+    }
+
     /// Place an upright label outside a convex map boundary. Its entire measured
     /// glyph rectangle clears the boundary tangent by `clearance_mm`.
     pub fn boundary_label(
@@ -488,6 +533,52 @@ impl Figure {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fixed_annotation_is_checked_at_every_animation_frame() {
+        use crate::{Axes, IntendedUse, Layer, Line, Panel};
+        let f = Figure::new(IntendedUse::ArticleWide);
+        let label = Label::new("$r_\\perp$", 50., 40.);
+        // Endpoints clear the label; the middle frame crosses it.
+        for (y, clear) in [(0.2, true), (0.5, false), (0.8, true)] {
+            let mut p = Panel::new(
+                Rect::new(10., 10., 80., 60.),
+                Axes::new([0., 1.], [0., 1.], "", ""),
+            );
+            p.push(Layer::Line(Line::new(vec![[0., y], [1., y]], "black")));
+            assert_eq!(
+                f.check_annotations(&p, std::slice::from_ref(&label))
+                    .is_ok(),
+                clear
+            );
+        }
+    }
+
+    #[test]
+    fn projected_surface_and_rotated_annotation_collisions_are_rejected() {
+        use crate::{Axes, ColorMap, IntendedUse, Layer, Normalization, Panel, Scale, Surface};
+        let mut f = Figure::new(IntendedUse::ArticleWide);
+        let sc =
+            f.scale(Scale::new([0., 1.], Normalization::Linear, ColorMap::sequential()).unwrap());
+        for yaw in [-1.0, 0.0, 1.0] {
+            let mut surface =
+                Surface::new(vec![0., 1.], vec![0., 1.], vec![0.5; 4], [0., 1.], sc).unwrap();
+            surface.yaw = yaw;
+            let mut p = Panel::new(
+                Rect::new(10., 10., 80., 60.),
+                Axes::new([0., 1.], [0., 1.], "", ""),
+            );
+            p.push(Layer::Surface(surface));
+            let mut label = Label::new("$r_\\perp$", 50., 40.);
+            label.rotation = 35.;
+            label.background = Some("white".into());
+            assert!(f.check_annotations(&p, &[label]).is_err());
+            assert!(
+                f.check_annotations(&p, &[Label::new("$z$", 5., 5.)])
+                    .is_ok()
+            );
+        }
+    }
+
     #[test]
     fn boundary_label_clears_entire_glyph_box() {
         let f = Figure::new(crate::IntendedUse::ArticleWide);
