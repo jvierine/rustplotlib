@@ -47,13 +47,15 @@ export class InteractiveFieldPlot{
    this.stage.append(canvas,label);const panel=new InteractiveFieldPanel(this,canvas,label,index);this.panels.push(panel);this.bind(panel);
   });
   this.selectionBox.style.cssText='display:none;position:absolute;z-index:3;border:1px dashed var(--blue,#1d5577);background:#63a8c922;pointer-events:none';this.stage.append(this.selectionBox);
-  this.observer=new ResizeObserver(()=>this.queueFrame());
+  this.observer=new ResizeObserver(()=>{const width=Math.max(360,Math.min(1200,Math.round(this.root.clientWidth)));if(width!==this.frame?.width)this.queueFrame();});
  }
  static async mount(root:HTMLElement,options:Options){initialization??=init();await initialization;
   const plot=new InteractiveFieldPlot(root,options);await plot.requestFrame();plot.observer.observe(root);return plot;}
  setColorLimits(low:number,high:number){if(!Number.isFinite(low)||!Number.isFinite(high)||high<=low)throw Error('Invalid color limits');
-  if(this.limits[0]===low&&this.limits[1]===high)return;this.limits=[low,high];this.panels.forEach(p=>{p.field.set_scale(low,high,0,.1,2);if(this.frame?.color_stops)p.field.set_colormap(Float32Array.from(this.frame.color_stops));});this.queueFrame();}
+  if(this.limits[0]===low&&this.limits[1]===high)return;this.limits=[low,high];this.panels.forEach(p=>p.applyView());this.queueFrame();}
  getColorLimits():[number,number]{return [...this.limits];}
+ getColorStops(){return this.frame?.color_stops;}
+ getDefaultHsvLimits():[number,number]{return [...this.initialMomentLimits];}
  getHsvLimits():[number,number]|undefined{return this.momentLimits?[...this.momentLimits]:undefined;}
  setMomentMode(enabled:boolean){if(this.momentMode===enabled)return;this.momentMode=enabled;this.queueFrame();}
  setHsvLimits(velocity:number,width:number){if(!Number.isFinite(velocity)||velocity<=0||!Number.isFinite(width)||width<=0)throw Error('Invalid HSV limits');
@@ -87,7 +89,7 @@ export class InteractiveFieldPlot{
   dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal();
  }
  setSpec(spec:FieldSpec){this.options.spec=spec;this.reset();}
- setFrameParameters(parameters:Record<string,number>){this.options.frameParameters=parameters;this.queueFrame();}
+ setFrameParameters(parameters:Record<string,number>){if(JSON.stringify(parameters)===JSON.stringify(this.options.frameParameters))return;this.options.frameParameters=parameters;this.queueFrame();}
  reset(){this.viewport.reset();this.changed();}
  physicalBounds(){const v=this.viewport.bounds(),b=this.options.spec.bounds;return [b[0]+v[0]*(b[2]-b[0]),b[1]+v[1]*(b[3]-b[1]),b[0]+v[2]*(b[2]-b[0]),b[1]+v[3]*(b[3]-b[1])];}
  applyView(){this.panels.forEach(p=>p.applyView());}
@@ -109,7 +111,7 @@ export class InteractiveFieldPlot{
    Object.assign(p.canvas.style,{left:x*100+'%',top:y*100+'%',width:w*100+'%',height:h*100+'%'});
    const dpr=Math.min(devicePixelRatio||1,2);p.canvas.width=Math.max(2,Math.round(w*frame.width*dpr));p.canvas.height=Math.max(2,Math.round(h*frame.height*dpr));
    const url=svgURL(frame.panel_labels[i]);this.labelURLs.push(url);p.label.src=url;p.label.style.display=this.options.spec.panels[i]?'block':'none';p.label.style.left=`calc(${x*100}% + 4px)`;p.label.style.top=`calc(${y*100}% + 4px)`;
-   p.field.set_scale(this.limits[0],this.limits[1],0,.1,2);if(frame.color_stops)p.field.set_colormap(Float32Array.from(frame.color_stops));p.applyView();
+   p.applyView();
   });
   this.axes.style.visibility='visible';this.root.removeAttribute('data-plot-error');
   this.colorButtons.forEach(b=>b.remove());this.colorButtons=[];
@@ -132,16 +134,54 @@ export class InteractiveFieldPlot{
   });
   c.addEventListener('pointercancel',()=>{this.drag=undefined;this.selectionBox.style.display='none';});
  }
- dispose(){this.editor?.remove();this.observer.disconnect();clearTimeout(this.timer);this.abort?.abort();this.panels.forEach(p=>p.field.free());this.viewport.free();if(this.frameURL)URL.revokeObjectURL(this.frameURL);this.labelURLs.forEach(URL.revokeObjectURL);this.root.replaceChildren();}
+ dispose(){this.editor?.remove();this.observer.disconnect();clearTimeout(this.timer);this.abort?.abort();this.panels.forEach(p=>p.dispose());this.viewport.free();if(this.frameURL)URL.revokeObjectURL(this.frameURL);this.labelURLs.forEach(URL.revokeObjectURL);this.root.replaceChildren();}
 }
 
 export class InteractiveFieldPanel{
- readonly field:FieldView;private dataBounds?:number[];
+ private gpu?:FieldView;private dataBounds?:number[];
+ private data?:{x:Float32Array;y:Float32Array;z:Float32Array};
+ private dirty=true;private lost=false;private canRestore=false;private restoring=false;private disposed=false;
+ private extension:WEBGL_lose_context|null=null;
+ private visibility:IntersectionObserver;private restoreTimer?:ReturnType<typeof setTimeout>;
  private moments?:Float32Array;
- constructor(private plot:InteractiveFieldPlot,readonly canvas:HTMLCanvasElement,readonly label:HTMLImageElement,readonly index:number){this.field=new FieldView(canvas);this.field.set_missing_color(.18,.23,.30,1);}
- set_rectilinear_data(x:Float32Array,y:Float32Array,z:Float32Array){this.moments=undefined;this.plot.setMomentMode(false);this.dataBounds=[x[0],y[0],x[x.length-1],y[y.length-1]];this.field.set_rectilinear_data(x,y,z);this.applyView();}
+ constructor(private plot:InteractiveFieldPlot,readonly canvas:HTMLCanvasElement,readonly label:HTMLImageElement,readonly index:number){
+  // A multi-panel dashboard can exceed mobile GPU-context budgets. Keep its
+  // data in CPU memory and only allocate textures for panels near the viewport.
+  this.visibility=new IntersectionObserver(()=>this.applyView(),{rootMargin:'40px'});this.visibility.observe(canvas);
+  canvas.addEventListener('webglcontextlost',this.onLost);canvas.addEventListener('webglcontextrestored',this.onRestored);
+ }
+ private onLost=(event:Event)=>{
+  event.preventDefault();this.lost=true;this.canRestore=true;this.gpu?.free();this.gpu=undefined;
+  delete this.canvas.dataset.gpuReady;
+  if(this.isVisible())this.restoreTimer=setTimeout(()=>this.applyView(),50);
+ };
+ private onRestored=()=>{this.lost=false;this.canRestore=this.restoring=false;if(!this.disposed)this.applyView();};
+ /** Low-level debug/pixel access may be temporarily unavailable while the GPU restores. */
+ get field(){const field=this.ensureField();if(field&&this.dataBounds)this.renderField(field);return field;}
+ private isVisible(){const r=this.canvas.getBoundingClientRect();return this.canvas.isConnected&&r.width>0&&r.height>0&&r.bottom>-40&&r.top<innerHeight+40&&r.right>0&&r.left<innerWidth;}
+ private ensureField(){
+  if(this.disposed)return;
+  if(this.lost){if(this.canRestore&&!this.restoring){this.restoring=true;this.extension?.restoreContext();}return;}
+  if(!this.gpu){this.gpu=new FieldView(this.canvas);this.extension=this.canvas.getContext('webgl2')!.getExtension('WEBGL_lose_context');this.gpu.set_missing_color(.18,.23,.30,1);this.dirty=true;}
+  return this.gpu;
+ }
+ private suspend(){
+  if(!this.gpu||!this.extension)return;
+  this.gpu.free();this.gpu=undefined;this.lost=true;this.canRestore=this.restoring=false;
+  delete this.canvas.dataset.gpuReady;this.extension.loseContext();
+ }
+ set_rectilinear_data(x:Float32Array,y:Float32Array,z:Float32Array){this.moments=undefined;this.plot.setMomentMode(false);this.dataBounds=[x[0],y[0],x[x.length-1],y[y.length-1]];this.data={x,y,z};this.dirty=true;this.applyView();}
  set_scale(low:number,high:number,_mode=0,_width=.1,_palette=2){this.plot.setColorLimits(low,high);}
- set_moment_data(values:Float32Array,velocity:number,width:number){this.moments=values;this.plot.setMomentMode(true);this.field.set_moment_data(values,velocity,width);this.plot.setHsvLimits(velocity,width);this.applyView();}
- applyHsvLimits(velocity:number,width:number){if(this.moments){this.field.set_moment_data(this.moments,velocity,width);this.applyView();}}
- applyView(){if(!this.dataBounds)return;const b=this.plot.physicalBounds(),d=this.dataBounds;this.field.set_view((b[0]-d[0])/(d[2]-d[0]),(b[1]-d[1])/(d[3]-d[1]),(b[2]-d[0])/(d[2]-d[0]),(b[3]-d[1])/(d[3]-d[1]));}
+ set_moment_data(values:Float32Array,velocity:number,width:number){this.moments=values;this.plot.setMomentMode(true);this.dirty=true;this.plot.setHsvLimits(velocity,width);this.applyView();}
+ applyHsvLimits(_velocity:number,_width:number){if(this.moments){this.dirty=true;this.applyView();}}
+ applyView(){
+  if(this.disposed)return;if(!this.isVisible()){this.suspend();return;}if(!this.dataBounds)return;
+  const field=this.ensureField();if(field)this.renderField(field);
+ }
+ private renderField(field:FieldView){
+  if(this.dirty&&this.data){field.set_rectilinear_data(this.data.x,this.data.y,this.data.z);if(this.moments)field.set_moment_data(this.moments,...(this.plot.getHsvLimits()||this.plot.getDefaultHsvLimits()));this.dirty=false;}
+  field.set_scale(...this.plot.getColorLimits(),0,.1,2);const stops=this.plot.getColorStops();if(stops)field.set_colormap(Float32Array.from(stops));
+  const b=this.plot.physicalBounds(),d=this.dataBounds!;field.set_view((b[0]-d[0])/(d[2]-d[0]),(b[1]-d[1])/(d[3]-d[1]),(b[2]-d[0])/(d[2]-d[0]),(b[3]-d[1])/(d[3]-d[1]));this.canvas.dataset.gpuReady='true';
+ }
+ dispose(){this.disposed=true;clearTimeout(this.restoreTimer);this.visibility.disconnect();this.canvas.removeEventListener('webglcontextlost',this.onLost);this.canvas.removeEventListener('webglcontextrestored',this.onRestored);this.suspend();this.gpu?.free();this.gpu=undefined;this.data=this.moments=undefined;}
 }
