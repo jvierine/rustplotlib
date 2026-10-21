@@ -678,3 +678,6 @@ impl GlobeView {
         finish(&self.gl, &self.p, &self.canvas);
     }
 }
+
+mod mesh;
+pub use mesh::MeshView;
