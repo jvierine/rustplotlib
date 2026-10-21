@@ -1,3 +1,6 @@
+mod heatmap;
+pub use heatmap::HeatmapView;
+
 mod viewport;
 pub use viewport::PlotViewport;
 
