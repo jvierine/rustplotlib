@@ -22,6 +22,8 @@ pub struct HeatmapView {
     time: bool,
     colors: Vec<f32>,
     points: Vec<(f64, f64, f32)>,
+    data: Vec<f32>,
+    shape: [u32; 2],
     markers: bool,
     bands: Vec<(f64, f64, String)>,
 }
@@ -53,6 +55,8 @@ impl HeatmapView {
             time: false,
             colors: vec![1., 1., 1., 0.02, 0.08, 0.13],
             points: Vec::new(),
+            data: Vec::new(),
+            shape: [0, 0],
             markers: false,
             bands: Vec::new(),
         })
@@ -70,24 +74,11 @@ impl HeatmapView {
         if ![x0, x1, y0, y1].iter().all(|v| v.is_finite()) || x1 <= x0 || y1 <= y0 {
             return Err(error("Invalid physical bounds"));
         }
-        self.points = if self.markers {
-            values
-                .iter()
-                .enumerate()
-                .filter(|(_, v)| v.is_finite())
-                .map(|(i, v)| {
-                    (
-                        ((i % nx as usize) as f64 + 0.5) / nx as f64,
-                        ((i / nx as usize) as f64 + 0.5) / ny as f64,
-                        *v,
-                    )
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
-        self.bounds = [x0, x1, y0, y1];
         self.field.set_data(nx, ny, values)?;
+        self.data = values.to_vec();
+        self.shape = [nx, ny];
+        self.refresh_points();
+        self.bounds = [x0, x1, y0, y1];
         self.view = [0., 0., 1., 1.];
         self.draw()
     }
@@ -111,15 +102,23 @@ impl HeatmapView {
             (0..32)
                 .flat_map(|i| palettes::PLASMA[i * 255 / 31].map(|v| v as f32))
                 .collect()
-        } else {
+        } else if name == "greys" || name == "gray" {
             vec![1., 1., 1., 0.02, 0.08, 0.13]
+        } else {
+            return Err(error("Palette must be plasma or greys"));
         };
         self.field.set_colormap(&self.colors)?;
+        self.draw()
+    }
+    /// Choose nearest-cell sampling or a finite maximum over the screen pixel.
+    pub fn set_reduction(&mut self, reduction: &str) -> Result<(), JsValue> {
+        self.field.set_reduction(reduction)?;
         self.draw()
     }
     /// Explicit point marks preserve sparse detections at any panel resolution.
     pub fn set_markers(&mut self, enabled: bool) -> Result<(), JsValue> {
         self.markers = enabled;
+        self.refresh_points();
         self.draw()
     }
     pub fn clear_bands(&mut self) -> Result<(), JsValue> {
@@ -274,7 +273,8 @@ impl HeatmapView {
             c.fill_text(
                 &format!(
                     "{v:.digits$}",
-                    digits = if self.high - self.low < 2. { 2 } else { 1 }
+                    digits = ((-((self.high - self.low) as f64 / 4.).log10()).ceil() + 1.)
+                        .clamp(0., 8.) as usize
                 ),
                 bx + 18.,
                 t + h * (1. - z) + 4.,
@@ -287,6 +287,27 @@ impl HeatmapView {
         c.fill_text(&self.label, 0., 0.)?;
         c.restore();
         Ok(())
+    }
+}
+impl HeatmapView {
+    fn refresh_points(&mut self) {
+        let [nx, ny] = self.shape;
+        self.points = if self.markers && nx > 0 && ny > 0 {
+            self.data
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| v.is_finite())
+                .map(|(i, v)| {
+                    (
+                        ((i % nx as usize) as f64 + 0.5) / nx as f64,
+                        ((i / nx as usize) as f64 + 0.5) / ny as f64,
+                        *v,
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
     }
 }
 fn color(stops: &[f32], z: f64) -> String {
@@ -333,7 +354,7 @@ fn ticks(a: f64, b: f64, n: usize, time: bool) -> Vec<(f64, String)> {
             } else {
                 format!("{:02}:{:02}", s / 3600, s / 60 % 60)
             }
-        } else if step >= 1. {
+        } else if step >= 1. && step.fract().abs() < 1e-9 {
             format!("{v:.0}")
         } else {
             let digits = (-step.log10().floor() + 1.).max(1.) as usize;

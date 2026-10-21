@@ -28,3 +28,18 @@ Cmd/Ctrl + drag shows a selection rectangle and zooms on release. Escape cancels
 Plain drag pans; Cmd/Ctrl + wheel zooms; right-click resets. Plain wheel scrolling
 is never intercepted. An optional fourth callback supplies the axes rectangle
 for canvases containing margins, such as `SeriesView`.
+
+
+`FieldView.set_reduction("max")` and `HeatmapView.set_reduction("max")` preserve
+isolated observations and narrow peaks when many source cells fit into a screen
+pixel. Every intersecting source cell contributes to a finite maximum; a fully
+missing footprint stays white. Both regular and rectilinear rasters are supported.
+The default remains `"nearest"`. Reduction affects display only, not source data,
+coordinates, normalization, or the colorbar. Choose maximum reduction for sparse
+RTIs or peak-sensitive spectra, rather than interpolating gaps or changing the
+underlying time bins.
+
+`HeatmapView.set_palette("plasma")`, `set_markers(true)`, and
+`add_band(low, high, label)` provide a shared scientific palette, visible sparse
+marks, and labeled physical-coordinate regions. The same palette drives the
+field and its colorbar; point marks and bands follow zoom and pan.

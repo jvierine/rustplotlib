@@ -201,6 +201,20 @@ impl FieldView {
         self.draw();
         Ok(())
     }
+    /// "nearest" samples a cell at each pixel center. "max" preserves peaks
+    /// over the complete pixel footprint, ignoring missing values. This changes
+    /// display reduction only; uploaded measurements and their coordinates stay intact.
+    pub fn set_reduction(&mut self, reduction: &str) -> Result<(), JsValue> {
+        let mode = match reduction {
+            "nearest" => 0,
+            "max" => 1,
+            _ => return Err(error("Reduction must be nearest or max")),
+        };
+        self.gl.use_program(Some(&self.p));
+        uniform_i(&self.gl, &self.p, "reduction", mode);
+        self.draw();
+        Ok(())
+    }
     pub fn set_rectilinear_data(
         &mut self,
         x_edges: &[f32],
@@ -303,6 +317,9 @@ impl FieldView {
         Ok(())
     }
     pub fn draw(&self) {
+        if self.nx == 0 || self.ny == 0 {
+            return;
+        }
         self.gl.use_program(Some(&self.p));
         self.gl.active_texture(Gl::TEXTURE1);
         self.gl.bind_texture(Gl::TEXTURE_2D, Some(&self.edge_x));
