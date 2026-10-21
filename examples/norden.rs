@@ -12,6 +12,11 @@ const VIEW: Projection = Projection::Orthographic {
 };
 const LIMIT: f64 = 0.031;
 const TEAL: &str = "#007f83";
+// Screen-space crop matches the author's selected view without changing camera
+// or map scale. All layers, including the altitude curtain, share this crop.
+const MAP_BOTTOM: f64 = -0.50;
+const MAP_HEIGHT: f64 = 66. * (1.015 - MAP_BOTTOM) / 2.03;
+const SAVED_HEIGHT: f64 = 66. - MAP_HEIGHT;
 
 struct Grid {
     lat: Vec<f64>,
@@ -111,9 +116,48 @@ fn geography(panel: &mut Panel, root: &Path) -> Result<()> {
     Ok(())
 }
 fn globe(rect: Rect) -> Panel {
-    let mut p = Panel::new(rect, Axes::new([-1.015, 1.015], [-1.015, 1.015], "", ""));
+    let mut p = Panel::new(rect, Axes::new([-1.015, 1.015], [MAP_BOTTOM, 1.015], "", ""));
     p.axes_visible = false;
     p
+}
+fn equivalent_currents(panel: &mut Panel, root: &Path, qd: &Grid) -> Result<(Vec<u64>, Vec<f64>)> {
+    let f = hdf5::File::open(root.join("data/smile_equivalent_currents_20260724_0030.h5"))?;
+    let lat = f.dataset("latitude_deg")?.read_raw::<f64>()?;
+    let lon = f.dataset("longitude_deg")?.read_raw::<f64>()?;
+    let north = f.dataset("current_north_A_per_km")?.read_raw::<f64>()?;
+    let east = f.dataset("current_east_A_per_km")?.read_raw::<f64>()?;
+    let mut ids = vec![];
+    let mut vectors = vec![];
+    for i in 0..lat.len() {
+        // Uniform geographic thinning, not selection by current strength.
+        // Only overlay the high-latitude UVI region. No opaque backing or halos.
+        if lat[i] < 60. || qd.sample(lon[i], lat[i], 0, false) < 60.
+            || ((lat[i] - 46.) / 2.).round() as i32 % 2 != 0
+            || ((lon[i] + 75.) / 5.).round() as i32 % 2 != 0 { continue; }
+        let Some(p) = VIEW.project([lon[i], lat[i]]) else { continue };
+        let (la, dl) = (lat[i].to_radians(), (lon[i] - 20.).to_radians());
+        let (s0, c0) = (60f64.to_radians().sin(), 60f64.to_radians().cos());
+        // Orthographic projection of local north/east tangents. Same 0.4 km
+        // per A/km vector scale as juha.no/smile, drawn on the map surface.
+        let k = 0.4 / 6371.;
+        let dx = k * (-north[i] * la.sin() * dl.sin() + east[i] * dl.cos());
+        let dy = k * (north[i] * (c0 * la.cos() + s0 * la.sin() * dl.cos())
+            + east[i] * s0 * dl.sin());
+        let length = dx.hypot(dy);
+        if length < 1e-12 { continue; }
+        let tip = [p[0] + dx, p[1] + dy];
+        let head = (length * 0.35).min(0.018);
+        let (ux, uy) = (dx / length, dy / length);
+        line(panel, vec![p, tip], "#246b64", 0.40);
+        line(panel, vec![
+            [tip[0] - head * ux - 0.45 * head * uy, tip[1] - head * uy + 0.45 * head * ux],
+            tip,
+            [tip[0] - head * ux + 0.45 * head * uy, tip[1] - head * uy - 0.45 * head * ux],
+        ], "#246b64", 0.40);
+        ids.push(i as u64);
+        vectors.extend([p[0], p[1], dx, dy]);
+    }
+    Ok((ids, vectors))
 }
 fn decimal_year(unix: f64) -> f64 {
     let mut days = unix / 86400.;
@@ -168,7 +212,7 @@ fn main() -> Result<()> {
         width_mm: 170.,
         font_pt: 9.,
     });
-    fig.height_mm = 127.;
+    fig.height_mm = 127. - SAVED_HEIGHT;
     fig.raster_dpi = 600.;
     fig.tight_export = false;
     fig.latex.cache = root.join("tmp/rustplotlib-latex");
@@ -188,16 +232,17 @@ fn main() -> Result<()> {
         Normalization::Log,
         ColorMap::inferno(),
     )?);
-    let mut left = globe(Rect::new(8., 9., 66., 66.));
-    let mut right = globe(Rect::new(92., 9., 66., 66.));
+    let mut left = globe(Rect::new(8., 9., 66., MAP_HEIGHT));
+    let mut right = globe(Rect::new(92., 9., 66., MAP_HEIGHT));
     let n = 1600;
-    let mut observed = image::RgbaImage::new(n, n);
-    let mut simulated = image::RgbaImage::new(n, n);
-    for y in 0..n {
+    let rows = (n as f64 * MAP_HEIGHT / 66.).round() as u32;
+    let mut observed = image::RgbaImage::new(n, rows);
+    let mut simulated = image::RgbaImage::new(n, rows);
+    for y in 0..rows {
         for x in 0..n {
             let xy = [
                 -1.015 + (x as f64 + 0.5) / n as f64 * 2.03,
-                1.015 - (y as f64 + 0.5) / n as f64 * 2.03,
+                1.015 - (y as f64 + 0.5) / rows as f64 * (1.015 - MAP_BOTTOM),
             ];
             let Some([lon, lat]) = VIEW.inverse(xy) else {
                 continue;
@@ -263,6 +308,7 @@ fn main() -> Result<()> {
     )?));
     geography(&mut left, &root)?;
     geography(&mut right, &root)?;
+    let (current_ids, current_vectors) = equivalent_currents(&mut left, &root, &qd)?;
     let orbit_file = hdf5::File::open(root.join("data/aissat1_figure_orbit.h5"))?;
     let orbit_lon = orbit_file.dataset("longitude_deg")?.read_raw::<f64>()?;
     let orbit_lat = orbit_file
@@ -300,8 +346,8 @@ fn main() -> Result<()> {
         Normalization::Linear,
         ColorMap::seismic(),
     )?);
-    let ax = Axes::new([-1.445, 1.015], [-1.015, 1.015], "", "");
-    let mut curtain = Panel::new(Rect::new(78.02, 9., 79.98, 66.), ax);
+    let ax = Axes::new([-1.445, 1.015], [MAP_BOTTOM, 1.015], "", "");
+    let mut curtain = Panel::new(Rect::new(78.02, 9., 79.98, MAP_HEIGHT), ax);
     curtain.axes_visible = false;
     let mut corners = Vec::new();
     for &z in &alt {
@@ -323,7 +369,7 @@ fn main() -> Result<()> {
     fig.labels.push(Label::new(r"120 min", 86., 17.));
     fig.labels.push(Label::new(r"100--500 km", 87., 22.));
     let mut cb = Colorbar::new(
-        Rect::new(79., 67., 19., 1.6),
+        Rect::new(77., 78. - SAVED_HEIGHT, 16., 1.6),
         temperature,
         r"$\Delta T$ (K)",
         vec![-12.5, 0., 12.5],
@@ -346,13 +392,13 @@ fn main() -> Result<()> {
     fig.labels.push(e);
     for (rect, id, label, ticks) in [
         (
-            Rect::new(15., 78., 57., 1.6),
+            Rect::new(15., 78. - SAVED_HEIGHT, 50., 1.6),
             tec,
             r"$\delta\mathrm{TEC}$ (TECU; 10 min)",
             vec![-LIMIT, 0., LIMIT],
         ),
         (
-            Rect::new(100., 78., 51., 1.6),
+            Rect::new(100., 78. - SAVED_HEIGHT, 51., 1.6),
             heating,
             r"Joule heating ($\mathrm{mW\,m^{-2}}$)",
             vec![0., 10., 20.],
@@ -379,7 +425,7 @@ fn main() -> Result<()> {
     );
     axes.xticks = vec![2015., 2020., 2025.];
     axes.yticks = vec![-200., -100., 0.];
-    let mut drag = Panel::new(Rect::new(15., 99., 63., 17.), axes);
+    let mut drag = Panel::new(Rect::new(15., 99. - SAVED_HEIGHT, 63., 17.), axes);
     for y in [-200., -100., 0.] {
         line(&mut drag, vec![[2010., y], [2026., y]], "#d7dfe3", 0.3);
     }
@@ -392,9 +438,9 @@ fn main() -> Result<()> {
         to: [points[0][0], 12.],
         via: vec![
             [3., 9. + (1.015 - orbit_anchor[1]) / 2.03 * 66.],
-            [3., 90.],
-            [15., 90.],
-            [15., 98.],
+            [3., 90. - SAVED_HEIGHT],
+            [15., 90. - SAVED_HEIGHT],
+            [15., 98. - SAVED_HEIGHT],
         ],
         color: "#145b7a".into(),
         width_pt: 0.6,
@@ -402,7 +448,7 @@ fn main() -> Result<()> {
     fig.labels.push(Label::new(
         r"\textbf{c)\quad AISSat-1 orbital decay}",
         46.5,
-        94.5,
+        94.5 - SAVED_HEIGHT,
     ));
     let mut ax = Axes::new(
         [0., 24.],
@@ -418,7 +464,7 @@ fn main() -> Result<()> {
             .collect(),
     );
     ax.yticks = vec![71., 75., 78.];
-    let mut radar = Panel::new(Rect::new(100., 99., 51., 17.), ax);
+    let mut radar = Panel::new(Rect::new(100., 99. - SAVED_HEIGHT, 51., 17.), ax);
     radar.push(Layer::Image(
         image::open(root.join("assets/lokke_joule_heating_inset.png"))?.to_rgba8(),
     ));
@@ -426,10 +472,10 @@ fn main() -> Result<()> {
     fig.labels.push(Label::new(
         r"\textbf{d)\quad EISCAT VHF heating}",
         125.5,
-        94.5,
+        94.5 - SAVED_HEIGHT,
     ));
     fig.colorbars.push(Colorbar::new(
-        Rect::new(154., 99., 1.5, 17.),
+        Rect::new(154., 99. - SAVED_HEIGHT, 1.5, 17.),
         regional,
         r"$\mathrm{mW\,m^{-2}}$",
         vec![0.1, 1., 10.],
@@ -442,9 +488,9 @@ fn main() -> Result<()> {
         via: vec![
             [158., 38.],
             [166., 38.],
-            [166., 94.],
-            [154., 94.],
-            [154., 98.],
+            [166., 94. - SAVED_HEIGHT],
+            [154., 94. - SAVED_HEIGHT],
+            [154., 98. - SAVED_HEIGHT],
         ],
         color: TEAL.into(),
         width_pt: 0.55,
@@ -481,6 +527,10 @@ fn main() -> Result<()> {
     fig.save(out.join("norden_smile_mage_globes.png"))?;
     fig.save(out.join("norden_smile_mage_globes.svg"))?;
     let audit = hdf5::File::create(out.join("figure1-rustplotlib-validation.h5"))?;
+    audit.new_dataset_builder().with_data(&current_ids).create("equivalent_current_source_indices")?;
+    audit.new_dataset_builder().with_data(&current_vectors).create("equivalent_current_projected_vectors")?;
+    audit.new_dataset_builder().with_data(&[MAP_BOTTOM, 1.015]).create("map_y_limits")?;
+    audit.new_dataset_builder().with_data(&[170., fig.height_mm]).create("figure_size_mm")?;
     audit
         .new_dataset_builder()
         .with_data(&ids)
@@ -526,7 +576,7 @@ fn main() -> Result<()> {
         .with_data(&probes.iter().flatten().copied().collect::<Vec<_>>())
         .create("probe_lonlat_deg")?;
     println!(
-        "Rendered {} observed TEC cells and {} unchanged decay samples; 170 x 127 mm",
+        "Rendered {} observed TEC cells and {} unchanged decay samples; cropped globes with equivalent currents",
         ids.len(),
         points.len()
     );
