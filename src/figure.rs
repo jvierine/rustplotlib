@@ -761,15 +761,22 @@ pub struct Colorbar {
     pub scale: usize,
     pub label: String,
     pub ticks: Vec<f64>,
+    /// Optional TeX labels at the numeric tick positions, matching Axes labels.
+    pub tick_labels: Option<Vec<String>>,
     pub horizontal: bool,
 }
 impl Colorbar {
+    fn tick_label(&self, index: usize) -> String {
+        self.tick_labels.as_ref().map(|v| v[index].clone())
+            .unwrap_or_else(|| number(self.ticks[index]))
+    }
     pub fn new(rect: Rect, scale: usize, label: impl Into<String>, ticks: Vec<f64>) -> Self {
         Self {
             rect,
             scale,
             label: label.into(),
             ticks,
+            tick_labels: None,
             horizontal: false,
         }
     }
@@ -1138,6 +1145,9 @@ impl Figure {
                     && *x <= self.scales[b.scale].limits[1]),
                 "Colorbar ticks outside scale"
             );
+            ensure!(b.tick_labels.as_ref().is_none_or(|labels|
+                labels.len() == b.ticks.len() && labels.iter().all(|s| !s.is_empty())),
+                "Colorbar tick label count must match tick positions");
         }
         for c in &self.connectors {
             ensure!(
@@ -1203,7 +1213,7 @@ impl Figure {
         }
         for b in &self.colorbars {
             v.push(b.label.clone());
-            v.extend(b.ticks.iter().map(|x| number(*x)));
+            v.extend((0..b.ticks.len()).map(|i| b.tick_label(i)));
         }
         v.extend(self.labels.iter().map(|l| l.latex.clone()));
         v.retain(|s| !s.is_empty());
@@ -1540,7 +1550,7 @@ impl Figure {
                 let ticks_bottom = bar
                     .ticks
                     .iter()
-                    .map(|v| bar.rect.y + bar.rect.height + 1.3 * em + height(&number(*v)) / 2.)
+                    .enumerate().map(|(i, _)| bar.rect.y + bar.rect.height + 1.3 * em + height(&bar.tick_label(i)) / 2.)
                     .fold(bar.rect.y + bar.rect.height, f64::max);
                 self.height_mm = self.height_mm.max(label_bottom.max(ticks_bottom) + gap);
             }
@@ -1922,7 +1932,7 @@ impl Figure {
                 )?;
             }
             let em = self.font_pt * MM_PER_PT;
-            for v in &b.ticks {
+            for (tick_index, v) in b.ticks.iter().enumerate() {
                 if *v < sc.limits[0] || *v > sc.limits[1] {
                     continue;
                 }
@@ -1931,13 +1941,13 @@ impl Figure {
                 let (x, y) = if b.horizontal {
                     (r.x + t * r.width, r.y + r.height + 1.3 * em)
                 } else {
-                    let width = glyphs.get(&number(*v)).map_or(0., |g| g.width_pt * MM_PER_PT);
+                    let width = glyphs.get(&b.tick_label(tick_index)).map_or(0., |g| g.width_pt * MM_PER_PT);
                     (r.x + r.width + 0.65 * em + width / 2., r.y + (1.0 - t) * r.height)
                 };
                 place(
                     &mut s,
                     &glyphs,
-                    &number(*v),
+                    &b.tick_label(tick_index),
                     x,
                     y,
                     0.0,
@@ -1949,7 +1959,7 @@ impl Figure {
             let (x, y, rotation) = if b.horizontal {
                 (r.x + r.width / 2.0, r.y + r.height + 2.9 * em, 0.0)
             } else {
-                let width = b.ticks.iter().filter_map(|v| glyphs.get(&number(*v)))
+                let width = b.ticks.iter().enumerate().filter_map(|(i, _)| glyphs.get(&b.tick_label(i)))
                     .map(|g| g.width_pt * MM_PER_PT).fold(0., f64::max);
                 let label_height = glyphs.get(&b.label).map_or(0., |g| g.height_pt * MM_PER_PT);
                 (r.x + r.width + 1.3 * em + width + label_height / 2.,
@@ -2340,6 +2350,24 @@ pub fn number(x: f64) -> String {
 mod tests {
     use super::*;
     use crate::{ColorMap, Legend, LegendEntry, Normalization};
+    #[test]
+    fn custom_colorbar_labels_validate_and_render_through_tex() {
+        let mut f=Figure::new(IntendedUse::Custom{width_mm:150.,font_pt:12.});
+        f.height_mm=100.;
+        let scale=f.scale(Scale::new([0.,35000.],Normalization::Linear,ColorMap::viridis()).unwrap());
+        let mut bar=Colorbar::new(Rect::new(20.,15.,4.,60.),scale,"Range (km)",vec![0.,35000.]);
+        bar.tick_labels=Some(vec!["zero".into()]);
+        f.colorbars.push(bar);
+        assert!(f.validate().is_err());
+        f.colorbars[0].tick_labels=Some(vec!["0".into(),"35000".into()]);
+        assert!(f.all_labels().contains(&"35000".into()));
+        assert!(!f.all_labels().iter().any(|s|s.contains("times")));
+        f.latex.cache="target/custom-colorbar-ticks".into();
+        assert!(f.svg().is_ok());
+        f.colorbars[0].horizontal=true;
+        f.colorbars[0].rect=Rect::new(20.,15.,100.,4.);
+        assert!(f.svg().is_ok());
+    }
     #[test]
     fn vertical_colorbar_reserves_actual_tick_width() {
         let mut f=Figure::new(IntendedUse::Custom{width_mm:200.,font_pt:16.});
