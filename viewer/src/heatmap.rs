@@ -25,6 +25,10 @@ pub struct HeatmapView {
     data: Vec<f32>,
     shape: [u32; 2],
     markers: bool,
+    point_geometry: bool,
+    point_offset: f64,
+    font_size: f64,
+    marker_size: f64,
     bands: Vec<(f64, f64, String)>,
 }
 #[wasm_bindgen]
@@ -58,6 +62,10 @@ impl HeatmapView {
             data: Vec::new(),
             shape: [0, 0],
             markers: false,
+            point_geometry: false,
+            point_offset: 0.,
+            font_size: 16.,
+            marker_size: 1.1,
             bands: Vec::new(),
         })
     }
@@ -75,12 +83,66 @@ impl HeatmapView {
             return Err(error("Invalid physical bounds"));
         }
         self.field.set_data(nx, ny, values)?;
+        self.point_geometry = false;
         self.data = values.to_vec();
         self.shape = [nx, ny];
         self.refresh_points();
         self.bounds = [x0, x1, y0, y1];
         self.view = [0., 0., 1., 1.];
         self.draw()
+    }
+    /// Packed [x offset, y, scalar] samples with full physical bounds. The
+    /// offset keeps float32 UTC positions precise without large epoch values.
+    pub fn set_points(
+        &mut self,
+        xyz: &[f32],
+        x0: f64,
+        x1: f64,
+        y0: f64,
+        y1: f64,
+        offset: f64,
+    ) -> Result<(), JsValue> {
+        if xyz.len() % 3 != 0
+            || ![x0, x1, y0, y1, offset].iter().all(|v| v.is_finite())
+            || x1 <= x0
+            || y1 <= y0
+        {
+            return Err(error("Invalid scalar points"));
+        }
+        self.field.set_data(1, 1, &[f32::NAN])?;
+        self.bounds = [x0, x1, y0, y1];
+        self.data = xyz.to_vec();
+        self.shape = [0, 0];
+        self.point_geometry = true;
+        self.point_offset = offset;
+        self.markers = true;
+        self.refresh_points();
+        self.view = [0., 0., 1., 1.];
+        self.draw()
+    }
+    pub fn set_font_size(&mut self, pixels: f64) -> Result<(), JsValue> {
+        if !pixels.is_finite() || !(10. ..=32.).contains(&pixels) {
+            return Err(error("Font size must be 10–32 pixels"));
+        }
+        self.font_size = pixels;
+        self.draw()
+    }
+    pub fn set_marker_size(&mut self, pixels: f64) -> Result<(), JsValue> {
+        if !pixels.is_finite() || !(0.25..=20.).contains(&pixels) {
+            return Err(error("Invalid marker radius"));
+        }
+        self.marker_size = pixels;
+        self.draw()
+    }
+    pub fn scale_limits(&self) -> Vec<f64> {
+        vec![self.low as f64, self.high as f64]
+    }
+    pub fn color_label(&self) -> String {
+        self.label.clone()
+    }
+    pub fn colorbar_rect(&self) -> Vec<f64> {
+        let r = self.plot_rect();
+        vec![r[0] + r[2] + 12., r[1] - 5., 70., r[3] + 10.]
     }
     pub fn set_labels(&mut self, x: &str, y: &str, color: &str, time: bool) -> Result<(), JsValue> {
         self.xlabel = x.into();
@@ -102,10 +164,25 @@ impl HeatmapView {
             (0..32)
                 .flat_map(|i| palettes::PLASMA[i * 255 / 31].map(|v| v as f32))
                 .collect()
+        } else if name == "rainbow" {
+            (0..32)
+                .flat_map(|i| {
+                    let t = i as f64 / 31.;
+                    [
+                        (2. * t - 0.5).abs().clamp(0., 1.) as f32,
+                        (std::f64::consts::PI * t).sin() as f32,
+                        (std::f64::consts::FRAC_PI_2 * t).cos().max(0.) as f32,
+                    ]
+                })
+                .collect()
+        } else if name == "viridis" {
+            (0..32)
+                .flat_map(|i| palettes::VIRIDIS[i * 255 / 31].map(|v| v as f32))
+                .collect()
         } else if name == "greys" || name == "gray" {
-            vec![1., 1., 1., 0.02, 0.08, 0.13]
+            vec![1., 1., 1., 0., 0., 0.]
         } else {
-            return Err(error("Palette must be plasma or greys"));
+            return Err(error("Palette must be plasma, greys, rainbow, or viridis"));
         };
         self.field.set_colormap(&self.colors)?;
         self.draw()
@@ -141,10 +218,10 @@ impl HeatmapView {
     /// CSS plot rectangle. Position the field canvas here; all labels stay in Rust.
     pub fn plot_rect(&self) -> Vec<f64> {
         vec![
-            70.,
+            92.,
             22.,
-            (self.width - 165.).max(1.),
-            (self.height - 80.).max(1.),
+            (self.width - 210.).max(1.),
+            (self.height - 100.).max(1.),
         ]
     }
     pub fn resize(&mut self, width: f64, height: f64, dpr: f64) -> Result<(), JsValue> {
@@ -171,7 +248,7 @@ impl HeatmapView {
         let r = self.plot_rect();
         let (l, t, w, h) = (r[0], r[1], r[2], r[3]);
         c.clear_rect(0., 0., self.width, self.height);
-        c.set_font("13px Georgia, serif");
+        c.set_font(&format!("{}px Georgia, serif", self.font_size));
         c.set_fill_style_str("#243746");
         c.set_stroke_style_str("#61717b");
         c.set_line_width(0.7);
@@ -201,7 +278,7 @@ impl HeatmapView {
             if bottom > t && top < t + h {
                 let py = (top + 13.).max(t + 13.).min(t + h - 4.);
                 let px = l + 8. + (i % 2) as f64 * w * 0.48;
-                c.set_font("11px system-ui");
+                c.set_font(&format!("{}px system-ui", (self.font_size * 0.8).max(12.)));
                 c.set_text_align("left");
                 let tw = c.measure_text(label)?.width();
                 c.set_fill_style_str("rgba(255,255,255,0.85)");
@@ -223,7 +300,7 @@ impl HeatmapView {
                 c.arc(
                     l + (u - u0) / (u1 - u0) * w,
                     t + h - (v - v0) / (v1 - v0) * h,
-                    1.7,
+                    self.marker_size,
                     0.,
                     std::f64::consts::TAU,
                 )?;
@@ -231,7 +308,7 @@ impl HeatmapView {
             }
         }
         c.restore();
-        c.set_font("13px Georgia, serif");
+        c.set_font(&format!("{}px Georgia, serif", self.font_size));
         c.set_fill_style_str("#243746");
         c.set_stroke_style_str("#61717b");
         c.set_text_align("center");
@@ -241,9 +318,9 @@ impl HeatmapView {
             c.move_to(px, t + h);
             c.line_to(px, t + h + 5.);
             c.stroke();
-            c.fill_text(&label, px, t + h + 21.)?;
+            c.fill_text(&label, px, t + h + self.font_size + 10.)?;
         }
-        c.fill_text(&self.xlabel, l + w / 2., self.height - 12.)?;
+        c.fill_text(&self.xlabel, l + w / 2., self.height - 17.)?;
         c.set_text_align("right");
         for (y, label) in ticks(y0, y1, 5, false) {
             let py = t + h - (y - y0) / (y1 - y0) * h;
@@ -254,7 +331,7 @@ impl HeatmapView {
             c.fill_text(&label, l - 9., py + 4.)?;
         }
         c.save();
-        c.translate(17., t + h / 2.)?;
+        c.translate(22., t + h / 2.)?;
         c.rotate(-std::f64::consts::FRAC_PI_2)?;
         c.set_text_align("center");
         c.fill_text(&self.ylabel, 0., 0.)?;
@@ -281,7 +358,7 @@ impl HeatmapView {
             )?;
         }
         c.save();
-        c.translate(self.width - 10., t + h / 2.)?;
+        c.translate(self.width - 14., t + h / 2.)?;
         c.rotate(-std::f64::consts::FRAC_PI_2)?;
         c.set_text_align("center");
         c.fill_text(&self.label, 0., 0.)?;
@@ -292,7 +369,20 @@ impl HeatmapView {
 impl HeatmapView {
     fn refresh_points(&mut self) {
         let [nx, ny] = self.shape;
-        self.points = if self.markers && nx > 0 && ny > 0 {
+        self.points = if self.markers && self.point_geometry {
+            let [xa, xb, ya, yb] = self.bounds;
+            self.data
+                .chunks_exact(3)
+                .filter(|p| p.iter().all(|v| v.is_finite()))
+                .map(|p| {
+                    (
+                        (p[0] as f64 + self.point_offset - xa) / (xb - xa),
+                        (p[1] as f64 - ya) / (yb - ya),
+                        p[2],
+                    )
+                })
+                .collect()
+        } else if self.markers && nx > 0 && ny > 0 {
             self.data
                 .iter()
                 .enumerate()

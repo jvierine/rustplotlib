@@ -15,6 +15,21 @@ impl PlotViewport {
     pub fn bounds(&self) -> Vec<f64> {
         self.bounds.to_vec()
     }
+    /// Restore or share a normalized viewport between panels.
+    pub fn set_bounds(&mut self, x0: f64, y0: f64, x1: f64, y1: f64) -> bool {
+        if ![x0, y0, x1, y1].iter().all(|v| v.is_finite())
+            || x0 < 0.
+            || y0 < 0.
+            || x1 > 1.
+            || y1 > 1.
+            || x1 - x0 < 0.001
+            || y1 - y0 < 0.001
+        {
+            return false;
+        }
+        self.bounds = [x0, y0, x1, y1];
+        true
+    }
     pub fn reset(&mut self) {
         self.bounds = [0., 0., 1., 1.]
     }
