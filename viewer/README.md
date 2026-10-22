@@ -43,3 +43,18 @@ underlying time bins.
 `add_band(low, high, label)` provide a shared scientific palette, visible sparse
 marks, and labeled physical-coordinate regions. The same palette drives the
 field and its colorbar; point marks and bands follow zoom and pan.
+
+`HeatmapView.update_rows(firstRow, values)` updates complete texture rows without
+replacing a viewport. `set_rectilinear_data(xCenters, yCenters, values)` preserves
+irregular physical sampling. Free offscreen heatmaps to release their owned
+WebGL contexts.
+
+`bindColorbarEditor(axesCanvas, heatmap, {automaticLimits, onChange})` opens the
+shared numeric limit editor when the colorbar is clicked. It accepts the typed
+array returned by WASM `scale_limits()`.
+
+`SeriesView.set_time_axis()` adds UTC ticks before drawing daily line data.
+`SeriesView.begin_map(width,height,dpr,west,east,south,north)` fits a Mercator map
+with equal projected x/y scale; subsequent series and labels use geographic
+longitude/latitude degrees. Labels choose nearby free space to reduce overlap.
+The projection is limited to 85 degrees latitude.
