@@ -352,7 +352,7 @@ impl HeatmapView {
             x0,
             x1,
             if self.time {
-                ((w / 140.).floor() as usize).clamp(2, 4)
+                ((w / 90.).floor() as usize).clamp(2, 4)
             } else {
                 5
             },
