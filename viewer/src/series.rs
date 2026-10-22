@@ -8,6 +8,7 @@ pub struct SeriesView {
     width: f64,
     height: f64,
     bounds: [f64; 4],
+    margins: [f64; 4],
 }
 #[wasm_bindgen]
 impl SeriesView {
@@ -23,6 +24,7 @@ impl SeriesView {
             width: 600.,
             height: 230.,
             bounds: [0., 1., 0., 1.],
+            margins: [55., 20., 20., 35.],
         })
     }
     /// CSS dimensions and device pixel ratio are separate, preserving font size.
@@ -52,6 +54,7 @@ impl SeriesView {
         self.width = width;
         self.height = height;
         self.bounds = [x0, x1, y0, y1];
+        self.margins = [55., 20., 20., 35.];
         self.canvas.set_width((width * dpr).round() as u32);
         self.canvas.set_height((height * dpr).round() as u32);
         let c = &self.ctx;
@@ -83,7 +86,8 @@ impl SeriesView {
         let c = &self.ctx;
         c.save();
         c.begin_path();
-        c.rect(55., 20., self.width - 75., self.height - 55.);
+        let [l, t, r, b] = self.margins;
+        c.rect(l, t, self.width - l - r, self.height - t - b);
         c.clip();
         c.set_stroke_style_str(color);
         c.set_fill_style_str(color);
@@ -127,11 +131,16 @@ impl SeriesView {
 }
 impl SeriesView {
     fn px(&self, x: f64) -> f64 {
-        55. + (x - self.bounds[0]) / (self.bounds[1] - self.bounds[0]) * (self.width - 75.)
+        self.margins[0]
+            + (x - self.bounds[0]) / (self.bounds[1] - self.bounds[0])
+                * (self.width - self.margins[0] - self.margins[2])
     }
     fn py(&self, y: f64) -> f64 {
         self.height
-            - 35.
-            - (y - self.bounds[2]) / (self.bounds[3] - self.bounds[2]) * (self.height - 55.)
+            - self.margins[3]
+            - (y - self.bounds[2]) / (self.bounds[3] - self.bounds[2])
+                * (self.height - self.margins[1] - self.margins[3])
     }
 }
+
+include!("axes.rs");
