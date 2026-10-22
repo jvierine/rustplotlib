@@ -102,6 +102,25 @@ impl HeatmapView {
         self.data[first..first + values.len()].copy_from_slice(values);
         Ok(())
     }
+    /// Actual sample centers for irregular frequency/range scans. Edge lookup
+    /// is normalized before sending to WebGL, preserving large UTC epochs.
+    pub fn set_rectilinear_data(
+        &mut self,
+        x: &[f64],
+        y: &[f64],
+        values: &[f32],
+    ) -> Result<(), JsValue> {
+        let (x0, x1, xe) = normalized_edges(x).map_err(error)?;
+        let (y0, y1, ye) = normalized_edges(y).map_err(error)?;
+        self.field.set_rectilinear_data(&xe, &ye, values)?;
+        self.data = values.to_vec();
+        self.shape = [x.len() as u32, y.len() as u32];
+        self.point_geometry = false;
+        self.bounds = [x0, x1, y0, y1];
+        self.view = [0., 0., 1., 1.];
+        self.refresh_points();
+        self.draw()
+    }
     /// Packed [x offset, y, scalar] samples with full physical bounds. The
     /// offset keeps float32 UTC positions precise without large epoch values.
     pub fn set_points(
@@ -438,6 +457,21 @@ fn color(stops: &[f32], z: f64) -> String {
         .collect();
     format!("rgb({},{},{})", v[0], v[1], v[2])
 }
+fn normalized_edges(a: &[f64]) -> Result<(f64, f64, Vec<f32>), &'static str> {
+    if a.len() < 2 || a.iter().any(|v| !v.is_finite()) || a.windows(2).any(|v| v[1] <= v[0]) {
+        return Err("Sample centers must increase and be finite");
+    }
+    let low = a[0] - (a[1] - a[0]) / 2.;
+    let n = a.len();
+    let high = a[n - 1] + (a[n - 1] - a[n - 2]) / 2.;
+    let mut edges = vec![0.];
+    edges.extend(
+        a.windows(2)
+            .map(|v| (((v[0] + v[1]) / 2. - low) / (high - low)) as f32),
+    );
+    edges.push(1.);
+    Ok((low, high, edges))
+}
 fn ticks(a: f64, b: f64, n: usize, time: bool) -> Vec<(f64, String)> {
     let desired = (b - a) / n as f64;
     let step = if time {
@@ -483,6 +517,14 @@ fn ticks(a: f64, b: f64, n: usize, time: bool) -> Vec<(f64, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn irregular_centers_keep_physical_frequency_geometry() {
+        let (lo, hi, e) = normalized_edges(&[2., 3., 7.]).unwrap();
+        assert_eq!((lo, hi), (1.5, 9.));
+        assert_eq!(e.len(), 4);
+        assert!((e[1] - 1. / 7.5).abs() < 1e-6);
+        assert!(normalized_edges(&[2., 2.]).is_err());
+    }
     #[test]
     fn ticks_are_physical() {
         assert_eq!(
