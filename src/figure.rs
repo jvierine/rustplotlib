@@ -1931,7 +1931,8 @@ impl Figure {
                 let (x, y) = if b.horizontal {
                     (r.x + t * r.width, r.y + r.height + 1.3 * em)
                 } else {
-                    (r.x + r.width + 1.4 * em, r.y + (1.0 - t) * r.height)
+                    let width = glyphs.get(&number(*v)).map_or(0., |g| g.width_pt * MM_PER_PT);
+                    (r.x + r.width + 0.65 * em + width / 2., r.y + (1.0 - t) * r.height)
                 };
                 place(
                     &mut s,
@@ -1948,7 +1949,11 @@ impl Figure {
             let (x, y, rotation) = if b.horizontal {
                 (r.x + r.width / 2.0, r.y + r.height + 2.9 * em, 0.0)
             } else {
-                (r.x + r.width + 3.4 * em, r.y + r.height / 2.0, -90.0)
+                let width = b.ticks.iter().filter_map(|v| glyphs.get(&number(*v)))
+                    .map(|g| g.width_pt * MM_PER_PT).fold(0., f64::max);
+                let label_height = glyphs.get(&b.label).map_or(0., |g| g.height_pt * MM_PER_PT);
+                (r.x + r.width + 1.3 * em + width + label_height / 2.,
+                 r.y + r.height / 2.0, -90.0)
             };
             place(
                 &mut s,
@@ -2335,6 +2340,16 @@ pub fn number(x: f64) -> String {
 mod tests {
     use super::*;
     use crate::{ColorMap, Legend, LegendEntry, Normalization};
+    #[test]
+    fn vertical_colorbar_reserves_actual_tick_width() {
+        let mut f=Figure::new(IntendedUse::Custom{width_mm:200.,font_pt:16.});
+        f.height_mm=110.;
+        let scale=f.scale(Scale::new([-5000.,39000.],Normalization::Linear,ColorMap::viridis()).unwrap());
+        f.panels.push(Panel::new(Rect::new(25.,15.,100.,60.),Axes::new([0.,1.],[0.,1.],"Time","Range")));
+        f.colorbars.push(Colorbar::new(Rect::new(135.,15.,4.,60.),scale,"Virtual range (km)",vec![-5000.,10000.,39000.]));
+        f.latex.cache="target/colorbar-spacing-test".into();
+        assert!(f.svg().is_ok());
+    }
     #[test]
     fn secondary_axis_reserves_measured_negative_tick_width() {
         let mut f = crate::ArticleLayout::new(184., 10.)
