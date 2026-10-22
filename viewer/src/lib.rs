@@ -201,6 +201,35 @@ impl FieldView {
         self.draw();
         Ok(())
     }
+    /// Upload only newly arrived complete rows of an existing field texture.
+    /// This avoids reallocating and copying a full day on every stream chunk.
+    pub fn update_rows(&mut self, first_row: u32, values: &[f32]) -> Result<(), JsValue> {
+        if self.nx <= 0 || values.is_empty() || values.len() % self.nx as usize != 0 {
+            return Err(error("Row update must contain complete initialized rows"));
+        }
+        let count = values.len() / self.nx as usize;
+        if first_row as usize + count > self.ny as usize {
+            return Err(error("Row update exceeds field"));
+        }
+        self.gl.use_program(Some(&self.p));
+        self.gl.active_texture(Gl::TEXTURE0);
+        self.gl.bind_texture(Gl::TEXTURE_2D, Some(&self.t));
+        let arr = js_sys::Float32Array::from(values);
+        self.gl
+            .tex_sub_image_2d_with_i32_and_i32_and_u32_and_type_and_opt_array_buffer_view(
+                Gl::TEXTURE_2D,
+                0,
+                0,
+                first_row as i32,
+                self.nx,
+                count as i32,
+                Gl::RED,
+                Gl::FLOAT,
+                Some(&arr),
+            )?;
+        self.draw();
+        Ok(())
+    }
     /// "nearest" samples a cell at each pixel center. "max" preserves peaks
     /// over the complete pixel footprint, ignoring missing values. This changes
     /// display reduction only; uploaded measurements and their coordinates stay intact.
@@ -339,6 +368,15 @@ impl Drop for FieldView {
         self.gl.delete_texture(Some(&self.edge_x));
         self.gl.delete_texture(Some(&self.edge_y));
         self.gl.delete_program(Some(&self.p));
+        // A dashboard may mount thousands of short-lived panels. Explicitly
+        // retire their owned context instead of waiting for browser GC limits.
+        if let Ok(Some(extension)) = self.gl.get_extension("WEBGL_lose_context") {
+            if let Ok(value) = js_sys::Reflect::get(&extension, &JsValue::from_str("loseContext")) {
+                if let Some(function) = value.dyn_ref::<js_sys::Function>() {
+                    let _ = function.call0(&extension);
+                }
+            }
+        }
     }
 }
 

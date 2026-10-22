@@ -91,6 +91,17 @@ impl HeatmapView {
         self.view = [0., 0., 1., 1.];
         self.draw()
     }
+    /// Progressive row upload for a raster. Physical bounds and viewport stay
+    /// unchanged; callers do not need to resend the full image or reset zoom.
+    pub fn update_rows(&mut self, first_row: u32, values: &[f32]) -> Result<(), JsValue> {
+        if self.point_geometry || self.markers {
+            return Err(error("Row streaming requires an unmarked raster"));
+        }
+        self.field.update_rows(first_row, values)?;
+        let first = first_row as usize * self.shape[0] as usize;
+        self.data[first..first + values.len()].copy_from_slice(values);
+        Ok(())
+    }
     /// Packed [x offset, y, scalar] samples with full physical bounds. The
     /// offset keeps float32 UTC positions precise without large epoch values.
     pub fn set_points(
@@ -218,10 +229,10 @@ impl HeatmapView {
     /// CSS plot rectangle. Position the field canvas here; all labels stay in Rust.
     pub fn plot_rect(&self) -> Vec<f64> {
         vec![
-            92.,
-            22.,
-            (self.width - 210.).max(1.),
-            (self.height - 100.).max(1.),
+            82.,
+            12.,
+            (self.width - 190.).max(1.),
+            (self.height - 76.).max(1.),
         ]
     }
     pub fn resize(&mut self, width: f64, height: f64, dpr: f64) -> Result<(), JsValue> {
@@ -248,7 +259,10 @@ impl HeatmapView {
         let r = self.plot_rect();
         let (l, t, w, h) = (r[0], r[1], r[2], r[3]);
         c.clear_rect(0., 0., self.width, self.height);
-        c.set_font(&format!("{}px Georgia, serif", self.font_size));
+        c.set_font(&format!(
+            "{}px RustplotlibPagella, Palatino, serif",
+            self.font_size
+        ));
         c.set_fill_style_str("#243746");
         c.set_stroke_style_str("#61717b");
         c.set_line_width(0.7);
@@ -308,11 +322,23 @@ impl HeatmapView {
             }
         }
         c.restore();
-        c.set_font(&format!("{}px Georgia, serif", self.font_size));
+        c.set_font(&format!(
+            "{}px RustplotlibPagella, Palatino, serif",
+            self.font_size
+        ));
         c.set_fill_style_str("#243746");
         c.set_stroke_style_str("#61717b");
         c.set_text_align("center");
-        for (x, label) in ticks(x0, x1, if self.time { 4 } else { 5 }, self.time) {
+        for (x, label) in ticks(
+            x0,
+            x1,
+            if self.time {
+                ((w / 140.).floor() as usize).clamp(2, 4)
+            } else {
+                5
+            },
+            self.time,
+        ) {
             let px = l + (x - x0) / (x1 - x0) * w;
             c.begin_path();
             c.move_to(px, t + h);

@@ -124,6 +124,26 @@ impl SeriesView {
         c.restore();
         Ok(())
     }
+    /// Annotate data coordinates using the same font and transform as the axes.
+    pub fn label(&self, x: f64, y: f64, text: &str, color: &str) -> Result<(), JsValue> {
+        if !x.is_finite() || !y.is_finite() {
+            return Err(JsValue::from_str("Invalid label coordinate"));
+        }
+        let c = &self.ctx;
+        c.save();
+        c.set_font("16px RustplotlibPagella, Palatino, serif");
+        c.set_fill_style_str(color);
+        c.set_text_align("left");
+        let px = self.px(x) + 6.;
+        let py = self.py(y) - 7.;
+        let width = c.measure_text(text)?.width();
+        c.set_fill_style_str("rgba(255,255,255,0.9)");
+        c.fill_rect(px - 2., py - 15., width + 4., 20.);
+        c.set_fill_style_str(color);
+        c.fill_text(text, px, py)?;
+        c.restore();
+        Ok(())
+    }
 }
 impl SeriesView {
     fn px(&self, x: f64) -> f64 {
