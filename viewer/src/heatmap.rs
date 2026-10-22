@@ -476,8 +476,8 @@ fn ticks(a: f64, b: f64, n: usize, time: bool) -> Vec<(f64, String)> {
     let desired = (b - a) / n as f64;
     let step = if time {
         [
-            1., 2., 5., 10., 15., 30., 60., 120., 300., 600., 900., 1800., 3600., 7200., 21600.,
-            86400.,
+            1., 2., 5., 10., 15., 30., 60., 120., 300., 600., 900., 1800., 3600., 7200., 10800.,
+            21600., 43200., 86400.,
         ]
         .into_iter()
         .find(|&v| v >= desired)
@@ -542,5 +542,14 @@ mod tests {
                 .iter()
                 .all(|(_, s)| s.contains(':'))
         )
+    }
+    #[test]
+    fn narrow_full_day_keeps_a_midday_tick() {
+        let start = 1792627200.;
+        let labels: Vec<_> = ticks(start, start + 86400., 2, true)
+            .into_iter()
+            .map(|(_, s)| s)
+            .collect();
+        assert_eq!(labels, vec!["00:00", "12:00", "24:00"]);
     }
 }
