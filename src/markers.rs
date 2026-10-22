@@ -2,7 +2,7 @@
 use crate::{ColorMap, Figure, Layer, Line, Normalization, Panel, PolygonMesh, Scale};
 use anyhow::{Result, ensure};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MarkerShape {
     Circle,
     Square,
