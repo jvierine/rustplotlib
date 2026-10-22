@@ -20,6 +20,8 @@ pub struct HeatmapView {
     ylabel: String,
     label: String,
     time: bool,
+    x_labels_visible: bool,
+    column_support_applied: bool,
     colors: Vec<f32>,
     points: Vec<(f64, f64, f32)>,
     data: Vec<f32>,
@@ -57,6 +59,8 @@ impl HeatmapView {
             ylabel: String::new(),
             label: String::new(),
             time: false,
+            x_labels_visible: true,
+            column_support_applied: false,
             colors: vec![1., 1., 1., 0.02, 0.08, 0.13],
             points: Vec::new(),
             data: Vec::new(),
@@ -85,6 +89,7 @@ impl HeatmapView {
         self.field.set_data(nx, ny, values)?;
         self.point_geometry = false;
         self.data = values.to_vec();
+        self.column_support_applied = false;
         self.shape = [nx, ny];
         self.refresh_points();
         self.bounds = [x0, x1, y0, y1];
@@ -101,6 +106,48 @@ impl HeatmapView {
         let first = first_row as usize * self.shape[0] as usize;
         self.data[first..first + values.len()].copy_from_slice(values);
         Ok(())
+    }
+    /// Recorded columns, before any display-only expansion of sample support.
+    pub fn sampled_columns(&self) -> Vec<u32> {
+        let nx = self.shape[0] as usize;
+        (0..nx)
+            .filter(|&x| self.data.iter().skip(x).step_by(nx).any(|v| v.is_finite()))
+            .map(|x| x as u32)
+            .collect()
+    }
+    /// Nearest sample support for regularly spaced observations. This never
+    /// changes stored values, crosses a long outage, or fills missing values
+    /// within an explicitly recorded observation. Width is in column units.
+    pub fn set_column_support(
+        &mut self,
+        sources: &[u32],
+        max_half_width: f64,
+    ) -> Result<bool, JsValue> {
+        let nx = self.shape[0] as usize;
+        if !max_half_width.is_finite()
+            || max_half_width < 0.
+            || sources.iter().any(|&x| x as usize >= nx)
+            || sources.windows(2).any(|w| w[0] >= w[1])
+        {
+            return Err(error("Invalid sample support"));
+        }
+        let expanded = expand_columns(&self.data, nx, sources, max_half_width);
+        let applied = expanded.is_some();
+        if applied || self.column_support_applied {
+            self.field.set_data(
+                self.shape[0],
+                self.shape[1],
+                expanded.as_deref().unwrap_or(&self.data),
+            )?;
+            self.column_support_applied = applied;
+            self.draw()?;
+        }
+        Ok(applied)
+    }
+    /// Use one bottom time axis for a stack of aligned scientific panels.
+    pub fn set_x_labels_visible(&mut self, visible: bool) -> Result<(), JsValue> {
+        self.x_labels_visible = visible;
+        self.draw()
     }
     /// Actual sample centers for irregular frequency/range scans. Edge lookup
     /// is normalized before sending to WebGL, preserving large UTC epochs.
@@ -251,7 +298,7 @@ impl HeatmapView {
             82.,
             12.,
             (self.width - 190.).max(1.),
-            (self.height - 76.).max(1.),
+            (self.height - if self.x_labels_visible { 76. } else { 26. }).max(1.),
         ]
     }
     pub fn resize(&mut self, width: f64, height: f64, dpr: f64) -> Result<(), JsValue> {
@@ -348,24 +395,26 @@ impl HeatmapView {
         c.set_fill_style_str("#243746");
         c.set_stroke_style_str("#61717b");
         c.set_text_align("center");
-        for (x, label) in ticks(
-            x0,
-            x1,
-            if self.time {
-                ((w / 90.).floor() as usize).clamp(2, 4)
-            } else {
-                5
-            },
-            self.time,
-        ) {
-            let px = l + (x - x0) / (x1 - x0) * w;
-            c.begin_path();
-            c.move_to(px, t + h);
-            c.line_to(px, t + h + 5.);
-            c.stroke();
-            c.fill_text(&label, px, t + h + self.font_size + 10.)?;
+        if self.x_labels_visible {
+            for (x, label) in ticks(
+                x0,
+                x1,
+                if self.time {
+                    ((w / 90.).floor() as usize).clamp(2, 4)
+                } else {
+                    5
+                },
+                self.time,
+            ) {
+                let px = l + (x - x0) / (x1 - x0) * w;
+                c.begin_path();
+                c.move_to(px, t + h);
+                c.line_to(px, t + h + 5.);
+                c.stroke();
+                c.fill_text(&label, px, t + h + self.font_size + 10.)?;
+            }
+            c.fill_text(&self.xlabel, l + w / 2., self.height - 17.)?;
         }
-        c.fill_text(&self.xlabel, l + w / 2., self.height - 17.)?;
         c.set_text_align("right");
         for (y, label) in ticks(y0, y1, 5, false) {
             let py = t + h - (y - y0) / (y1 - y0) * h;
@@ -472,6 +521,57 @@ fn normalized_edges(a: &[f64]) -> Result<(f64, f64, Vec<f32>), &'static str> {
     edges.push(1.);
     Ok((low, high, edges))
 }
+fn expand_columns(
+    data: &[f32],
+    nx: usize,
+    sources: &[u32],
+    max_half_width: f64,
+) -> Option<Vec<f32>> {
+    if nx == 0 || sources.len() < 4 {
+        return None;
+    }
+    let mut gaps: Vec<_> = sources.windows(2).map(|w| (w[1] - w[0]) as f64).collect();
+    gaps.sort_by(f64::total_cmp);
+    let cadence = gaps[gaps.len() / 2];
+    if gaps
+        .iter()
+        .filter(|&&g| (g - cadence).abs() <= (cadence * 0.25).max(1.))
+        .count()
+        < 3
+    {
+        return None;
+    }
+    let half = ((cadence + 1.) / 2.).min(max_half_width);
+    let mut nearest = (0..nx).collect::<Vec<_>>();
+    let mut j = 0;
+    let mut changed = false;
+    for x in sources[0] as usize..=*sources.last().unwrap() as usize {
+        while j + 1 < sources.len()
+            && (sources[j + 1] as isize - x as isize).abs()
+                < (sources[j] as isize - x as isize).abs()
+        {
+            j += 1;
+        }
+        let source = sources[j] as usize;
+        if (source as f64 - x as f64).abs() <= half
+            && source != x
+            && !data.iter().skip(x).step_by(nx).any(|v| v.is_finite())
+        {
+            nearest[x] = source;
+            changed = true;
+        }
+    }
+    if !changed {
+        return None;
+    }
+    let mut display = data.to_vec();
+    for (row, original) in display.chunks_exact_mut(nx).zip(data.chunks_exact(nx)) {
+        for x in 0..nx {
+            row[x] = original[nearest[x]];
+        }
+    }
+    Some(display)
+}
 fn ticks(a: f64, b: f64, n: usize, time: bool) -> Vec<(f64, String)> {
     let desired = (b - a) / n as f64;
     let step = if time {
@@ -551,5 +651,34 @@ mod tests {
             .map(|(_, s)| s)
             .collect();
         assert_eq!(labels, vec!["00:00", "12:00", "24:00"]);
+    }
+    #[test]
+    fn support_fills_cadence_but_preserves_outages_and_raw_values() {
+        let sources = [2, 7, 12, 17, 50, 55];
+        let mut raw = vec![f32::NAN; 60];
+        for &x in &sources {
+            raw[x as usize] = x as f32;
+        }
+        let view = expand_columns(&raw, 60, &sources, 15.).unwrap();
+        assert_eq!(view[4], 2.);
+        assert_eq!(view[5], 7.);
+        assert!(view[30].is_nan());
+        assert!(view[0].is_nan());
+        assert!(view[59].is_nan());
+        assert!(raw[4].is_nan());
+    }
+    #[test]
+    fn recorded_non_detection_is_not_replaced_with_a_neighbor_echo() {
+        let sources = [0, 4, 8, 12];
+        let mut raw = vec![f32::NAN; 13];
+        raw[0] = 7.;
+        raw[8] = 8.;
+        raw[12] = 9.;
+        let view = expand_columns(&raw, 13, &sources, 15.).unwrap();
+        assert!(view[3].is_nan());
+        assert!(view[4].is_nan());
+        assert!(view[5].is_nan());
+        assert_eq!(view[7], 8.);
+        assert!(expand_columns(&raw, 13, &[0, 4], 15.).is_none());
     }
 }
