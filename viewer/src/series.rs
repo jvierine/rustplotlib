@@ -11,6 +11,9 @@ pub struct SeriesView {
     map: bool,
     time: bool,
     labels: Vec<[f64; 4]>,
+    color_key: Vec<(String, String)>,
+    key_positions: Vec<[f64; 2]>,
+    top: f64,
 }
 #[wasm_bindgen]
 impl SeriesView {
@@ -29,6 +32,9 @@ impl SeriesView {
             map: false,
             time: false,
             labels: Vec::new(),
+            color_key: Vec::new(),
+            key_positions: Vec::new(),
+            top: 20.,
         })
     }
     /// CSS dimensions and device pixel ratio are separate, preserving font size.
@@ -65,7 +71,31 @@ impl SeriesView {
         self.canvas.set_height((height * dpr).round() as u32);
         let c = &self.ctx;
         c.set_transform(dpr, 0., 0., dpr, 0., 0.)?;
+        c.set_font("15px RustplotlibPagella, Palatino, serif");
+        let widths = self
+            .color_key
+            .iter()
+            .map(|(_, label)| c.measure_text(label).map(|m| m.width() + 28.))
+            .collect::<Result<Vec<_>, _>>()?;
+        let (positions, top) = key_layout(&widths, width);
+        self.key_positions = positions;
+        self.top = top;
         self.draw_axes(left, right)
+    }
+    /// Categorical color key. Set before begin/begin_map; labels wrap above
+    /// the data rectangle and share its font without covering observations.
+    pub fn set_color_key(
+        &mut self,
+        colors: Vec<String>,
+        labels: Vec<String>,
+    ) -> Result<(), JsValue> {
+        if colors.len() != labels.len() || colors.len() > 16 {
+            return Err(JsValue::from_str(
+                "Color key requires matching colors and labels",
+            ));
+        }
+        self.color_key = colors.into_iter().zip(labels).collect();
+        Ok(())
     }
     /// UTC x ticks for a time-series panel. Call before adding series.
     pub fn set_time_axis(&mut self) -> Result<(), JsValue> {
@@ -91,7 +121,7 @@ impl SeriesView {
         self.begin(width, height, dpr, west, east, south, north, "", "")?;
         self.map = true;
         let mut bounds = [west, east, mercator(south), mercator(north)];
-        let ratio = (width - 75.) / (height - 55.);
+        let ratio = (width - 75.) / (height - self.top - 35.);
         let dx = bounds[1] - bounds[0];
         let dy = bounds[3] - bounds[2];
         if dx / dy < ratio {
@@ -115,7 +145,12 @@ impl SeriesView {
         let c = &self.ctx;
         c.save();
         c.begin_path();
-        c.rect(55., 20., self.width - 75., self.height - 55.);
+        c.rect(
+            55.,
+            self.top,
+            self.width - 75.,
+            self.height - self.top - 35.,
+        );
         c.clip();
         c.set_stroke_style_str(color);
         c.set_fill_style_str(color);
@@ -181,7 +216,7 @@ impl SeriesView {
             [-width - 8., 34.],
         ] {
             let px = (anchor[0] + offset[0]).clamp(57., (self.width - width - 22.).max(57.));
-            let py = (anchor[1] + offset[1]).clamp(21., self.height - 57.);
+            let py = (anchor[1] + offset[1]).clamp(self.top + 1., self.height - 57.);
             let rect = [px, py, width + 4., 22.];
             let score = self.labels.iter().map(|b| overlap(rect, *b)).sum::<f64>();
             if score < best {
@@ -214,6 +249,14 @@ impl SeriesView {
 impl SeriesView {
     fn draw_axes(&self, left: &str, right: &str) -> Result<(), JsValue> {
         let c = &self.ctx;
+        c.set_font("15px RustplotlibPagella, Palatino, serif");
+        c.set_text_align("left");
+        for ((color, label), position) in self.color_key.iter().zip(&self.key_positions) {
+            c.set_fill_style_str(color);
+            c.fill_rect(position[0], position[1] + 3., 18., 8.);
+            c.set_fill_style_str("#314858");
+            c.fill_text(label, position[0] + 24., position[1] + 13.)?;
+        }
         c.set_font("18px RustplotlibPagella, Palatino, serif");
         c.set_fill_style_str("#314858");
         c.set_stroke_style_str("#e2e7ea");
@@ -221,7 +264,7 @@ impl SeriesView {
         c.set_text_align("right");
         for j in 0..5 {
             let v = self.bounds[2] + (self.bounds[3] - self.bounds[2]) * j as f64 / 4.;
-            let py = self.height - 35. - (self.height - 55.) * j as f64 / 4.;
+            let py = self.height - 35. - (self.height - self.top - 35.) * j as f64 / 4.;
             c.begin_path();
             c.move_to(55., py);
             c.line_to(self.width - 20., py);
@@ -236,7 +279,7 @@ impl SeriesView {
                     self.bounds[0] + (self.bounds[1] - self.bounds[0]) * j as f64 / count as f64;
                 let px = self.px(x);
                 c.begin_path();
-                c.move_to(px, 20.);
+                c.move_to(px, self.top);
                 c.line_to(px, self.height - 35.);
                 c.stroke();
                 c.set_text_align(if j == 0 {
@@ -281,8 +324,26 @@ impl SeriesView {
         };
         self.height
             - 35.
-            - (y - self.bounds[2]) / (self.bounds[3] - self.bounds[2]) * (self.height - 55.)
+            - (y - self.bounds[2]) / (self.bounds[3] - self.bounds[2])
+                * (self.height - self.top - 35.)
     }
+}
+fn key_layout(widths: &[f64], width: f64) -> (Vec<[f64; 2]>, f64) {
+    if widths.is_empty() {
+        return (Vec::new(), 20.);
+    }
+    let mut x = 55.;
+    let mut y = 2.;
+    let mut positions = Vec::new();
+    for &item in widths {
+        if x > 55. && x + item > width - 20. {
+            x = 55.;
+            y += 22.;
+        }
+        positions.push([x, y]);
+        x += item + 16.;
+    }
+    (positions, y + 36.)
 }
 fn mercator(lat: f64) -> f64 {
     (std::f64::consts::FRAC_PI_4 + lat.to_radians() / 2.)
@@ -300,6 +361,17 @@ fn overlap(a: [f64; 4], b: [f64; 4]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn categorical_key_wraps_without_covering_data() {
+        let (wide, top) = key_layout(&[100., 100., 100., 100.], 600.);
+        assert!(wide.iter().all(|p| p[1] == 2.));
+        assert_eq!(top, 38.);
+        let (narrow, top) = key_layout(&[100., 100., 100., 100.], 300.);
+        assert_eq!(narrow[2], [55., 24.]);
+        assert_eq!(top, 60.);
+        assert!(narrow.iter().all(|p| p[1] + 16. < top));
+        assert_eq!(key_layout(&[], 300.).1, 20.);
+    }
     #[test]
     fn map_projection_preserves_latitudes_and_local_scale() {
         for lat in [-80., -45., 0., 54., 69.7, 80.] {
