@@ -78,6 +78,9 @@ impl SeriesView {
             .map(|(_, label)| c.measure_text(label).map(|m| m.width() + 28.))
             .collect::<Result<Vec<_>, _>>()?;
         let (positions, top) = key_layout(&widths, width);
+        if widths.iter().any(|w| *w > width - 75.) || height - top - 35. < 30. {
+            return Err(JsValue::from_str("Color key does not fit plot dimensions"));
+        }
         self.key_positions = positions;
         self.top = top;
         self.draw_axes(left, right)
