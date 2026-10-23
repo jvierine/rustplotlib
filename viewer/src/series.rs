@@ -1,6 +1,9 @@
 //! Lightweight scientific line/scatter panels for live browser diagnostics.
 use wasm_bindgen::{JsCast, prelude::*};
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
+#[path = "../../src/palettes.rs"]
+#[allow(dead_code)]
+mod palettes;
 #[wasm_bindgen]
 pub struct SeriesView {
     canvas: HtmlCanvasElement,
@@ -14,6 +17,7 @@ pub struct SeriesView {
     color_key: Vec<(String, String)>,
     key_positions: Vec<[f64; 2]>,
     top: f64,
+    color_scale: Option<(f64, f64, String, String)>,
 }
 #[wasm_bindgen]
 impl SeriesView {
@@ -35,6 +39,7 @@ impl SeriesView {
             color_key: Vec::new(),
             key_positions: Vec::new(),
             top: 20.,
+            color_scale: None,
         })
     }
     /// CSS dimensions and device pixel ratio are separate, preserving font size.
@@ -77,7 +82,13 @@ impl SeriesView {
             .iter()
             .map(|(_, label)| c.measure_text(label).map(|m| m.width() + 28.))
             .collect::<Result<Vec<_>, _>>()?;
-        let (positions, top) = key_layout(&widths, width);
+        let (mut positions, mut top) = key_layout(&widths, width);
+        if self.color_scale.is_some() {
+            for p in &mut positions {
+                p[1] += 58.;
+            }
+            top = if widths.is_empty() { 64. } else { top + 58. };
+        }
         if widths.iter().any(|w| *w > width - 75.) || height - top - 35. < 30. {
             return Err(JsValue::from_str("Color key does not fit plot dimensions"));
         }
@@ -99,6 +110,60 @@ impl SeriesView {
         }
         self.color_key = colors.into_iter().zip(labels).collect();
         Ok(())
+    }
+    /// Continuous horizontal colorbar. Set before begin; series colors sampled
+    /// with scale_color use exactly the same palette and clipping as the bar.
+    pub fn set_color_scale(
+        &mut self,
+        low: f64,
+        high: f64,
+        palette: &str,
+        label: &str,
+    ) -> Result<(), JsValue> {
+        if !valid_scale(low, high) || !matches!(palette, "viridis" | "plasma") {
+            return Err(JsValue::from_str("Invalid color scale or palette"));
+        }
+        self.color_scale = Some((low, high, palette.into(), label.into()));
+        Ok(())
+    }
+    pub fn set_scale(&mut self, low: f64, high: f64) -> Result<(), JsValue> {
+        if !valid_scale(low, high) {
+            return Err(JsValue::from_str("Invalid color limits"));
+        }
+        let Some(scale) = &mut self.color_scale else {
+            return Err(JsValue::from_str("No color scale"));
+        };
+        scale.0 = low;
+        scale.1 = high;
+        Ok(())
+    }
+    pub fn scale_limits(&self) -> Vec<f64> {
+        self.color_scale
+            .as_ref()
+            .map(|s| vec![s.0, s.1])
+            .unwrap_or_default()
+    }
+    pub fn color_label(&self) -> String {
+        self.color_scale
+            .as_ref()
+            .map(|s| s.3.clone())
+            .unwrap_or_default()
+    }
+    pub fn colorbar_rect(&self) -> Vec<f64> {
+        if self.color_scale.is_some() {
+            vec![55., 0., self.width - 75., 56.]
+        } else {
+            vec![0.; 4]
+        }
+    }
+    pub fn scale_color(&self, value: f64) -> Result<String, JsValue> {
+        let Some(s) = &self.color_scale else {
+            return Err(JsValue::from_str("No color scale"));
+        };
+        if !value.is_finite() {
+            return Err(JsValue::from_str("Nonfinite color value"));
+        }
+        Ok(scale_color(s.0, s.1, &s.2, value))
     }
     /// UTC x ticks for a time-series panel. Call before adding series.
     pub fn set_time_axis(&mut self) -> Result<(), JsValue> {
@@ -254,6 +319,33 @@ impl SeriesView {
         let c = &self.ctx;
         c.set_font("15px RustplotlibPagella, Palatino, serif");
         c.set_text_align("left");
+        if let Some((low, high, palette, label)) = &self.color_scale {
+            c.set_fill_style_str("#314858");
+            c.fill_text(label, 55., 15.)?;
+            let width = self.width - 75.;
+            for i in 0..256 {
+                let value = low + (high - low) * i as f64 / 255.;
+                c.set_fill_style_str(&scale_color(*low, *high, palette, value));
+                c.fill_rect(55. + width * i as f64 / 256., 23., width / 256. + 0.5, 10.);
+            }
+            c.set_fill_style_str("#314858");
+            let n = if width < 400. { 2 } else { 5 };
+            for i in 0..=n {
+                c.set_text_align(if i == 0 {
+                    "left"
+                } else if i == n {
+                    "right"
+                } else {
+                    "center"
+                });
+                c.fill_text(
+                    &format!("{:.1}", low + (high - low) * i as f64 / n as f64),
+                    55. + width * i as f64 / n as f64,
+                    51.,
+                )?;
+            }
+            c.set_text_align("left");
+        }
         for ((color, label), position) in self.color_key.iter().zip(&self.key_positions) {
             c.set_fill_style_str(color);
             c.fill_rect(position[0], position[1] + 3., 18., 8.);
@@ -331,6 +423,23 @@ impl SeriesView {
                 * (self.height - self.top - 35.)
     }
 }
+fn valid_scale(low: f64, high: f64) -> bool {
+    low.is_finite() && high.is_finite() && high > low && (high - low).is_finite()
+}
+fn scale_color(low: f64, high: f64, palette: &str, value: f64) -> String {
+    let index = (((value - low) / (high - low)).clamp(0., 1.) * 255.).round() as usize;
+    let rgb = if palette == "plasma" {
+        palettes::PLASMA[index]
+    } else {
+        palettes::VIRIDIS[index]
+    };
+    format!(
+        "rgb({},{},{})",
+        (rgb[0] * 255.).round() as u8,
+        (rgb[1] * 255.).round() as u8,
+        (rgb[2] * 255.).round() as u8
+    )
+}
 fn key_layout(widths: &[f64], width: f64) -> (Vec<[f64; 2]>, f64) {
     if widths.is_empty() {
         return (Vec::new(), 20.);
@@ -364,6 +473,24 @@ fn overlap(a: [f64; 4], b: [f64; 4]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn continuous_scale_clips_and_rejects_invalid_limits() {
+        assert_eq!(
+            scale_color(0., 25., "viridis", -3.),
+            scale_color(0., 25., "viridis", 0.)
+        );
+        assert_eq!(
+            scale_color(0., 25., "viridis", 30.),
+            scale_color(0., 25., "viridis", 25.)
+        );
+        assert_ne!(
+            scale_color(0., 25., "viridis", 10.),
+            scale_color(0., 25., "viridis", 15.)
+        );
+        assert!(!valid_scale(3., 3.));
+        assert!(!valid_scale(f64::NAN, 25.));
+        assert!(!valid_scale(-f64::MAX, f64::MAX));
+    }
     #[test]
     fn categorical_key_wraps_without_covering_data() {
         let (wide, top) = key_layout(&[100., 100., 100., 100.], 600.);
