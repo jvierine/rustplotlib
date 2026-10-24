@@ -767,7 +767,9 @@ pub struct Colorbar {
 }
 impl Colorbar {
     fn tick_label(&self, index: usize) -> String {
-        self.tick_labels.as_ref().map(|v| v[index].clone())
+        self.tick_labels
+            .as_ref()
+            .map(|v| v[index].clone())
             .unwrap_or_else(|| number(self.ticks[index]))
     }
     pub fn new(rect: Rect, scale: usize, label: impl Into<String>, ticks: Vec<f64>) -> Self {
@@ -1145,9 +1147,13 @@ impl Figure {
                     && *x <= self.scales[b.scale].limits[1]),
                 "Colorbar ticks outside scale"
             );
-            ensure!(b.tick_labels.as_ref().is_none_or(|labels|
-                labels.len() == b.ticks.len() && labels.iter().all(|s| !s.is_empty())),
-                "Colorbar tick label count must match tick positions");
+            ensure!(
+                b.tick_labels
+                    .as_ref()
+                    .is_none_or(|labels| labels.len() == b.ticks.len()
+                        && labels.iter().all(|s| !s.is_empty())),
+                "Colorbar tick label count must match tick positions"
+            );
         }
         for c in &self.connectors {
             ensure!(
@@ -1550,7 +1556,10 @@ impl Figure {
                 let ticks_bottom = bar
                     .ticks
                     .iter()
-                    .enumerate().map(|(i, _)| bar.rect.y + bar.rect.height + 1.3 * em + height(&bar.tick_label(i)) / 2.)
+                    .enumerate()
+                    .map(|(i, _)| {
+                        bar.rect.y + bar.rect.height + 1.3 * em + height(&bar.tick_label(i)) / 2.
+                    })
                     .fold(bar.rect.y + bar.rect.height, f64::max);
                 self.height_mm = self.height_mm.max(label_bottom.max(ticks_bottom) + gap);
             }
@@ -1941,8 +1950,13 @@ impl Figure {
                 let (x, y) = if b.horizontal {
                     (r.x + t * r.width, r.y + r.height + 1.3 * em)
                 } else {
-                    let width = glyphs.get(&b.tick_label(tick_index)).map_or(0., |g| g.width_pt * MM_PER_PT);
-                    (r.x + r.width + 0.65 * em + width / 2., r.y + (1.0 - t) * r.height)
+                    let width = glyphs
+                        .get(&b.tick_label(tick_index))
+                        .map_or(0., |g| g.width_pt * MM_PER_PT);
+                    (
+                        r.x + r.width + 0.65 * em + width / 2.,
+                        r.y + (1.0 - t) * r.height,
+                    )
                 };
                 place(
                     &mut s,
@@ -1959,11 +1973,19 @@ impl Figure {
             let (x, y, rotation) = if b.horizontal {
                 (r.x + r.width / 2.0, r.y + r.height + 2.9 * em, 0.0)
             } else {
-                let width = b.ticks.iter().enumerate().filter_map(|(i, _)| glyphs.get(&b.tick_label(i)))
-                    .map(|g| g.width_pt * MM_PER_PT).fold(0., f64::max);
+                let width = b
+                    .ticks
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, _)| glyphs.get(&b.tick_label(i)))
+                    .map(|g| g.width_pt * MM_PER_PT)
+                    .fold(0., f64::max);
                 let label_height = glyphs.get(&b.label).map_or(0., |g| g.height_pt * MM_PER_PT);
-                (r.x + r.width + 1.3 * em + width + label_height / 2.,
-                 r.y + r.height / 2.0, -90.0)
+                (
+                    r.x + r.width + 1.3 * em + width + label_height / 2.,
+                    r.y + r.height / 2.0,
+                    -90.0,
+                )
             };
             place(
                 &mut s,
@@ -2352,30 +2374,52 @@ mod tests {
     use crate::{ColorMap, Legend, LegendEntry, Normalization};
     #[test]
     fn custom_colorbar_labels_validate_and_render_through_tex() {
-        let mut f=Figure::new(IntendedUse::Custom{width_mm:150.,font_pt:12.});
-        f.height_mm=100.;
-        let scale=f.scale(Scale::new([0.,35000.],Normalization::Linear,ColorMap::viridis()).unwrap());
-        let mut bar=Colorbar::new(Rect::new(20.,15.,4.,60.),scale,"Range (km)",vec![0.,35000.]);
-        bar.tick_labels=Some(vec!["zero".into()]);
+        let mut f = Figure::new(IntendedUse::Custom {
+            width_mm: 150.,
+            font_pt: 12.,
+        });
+        f.height_mm = 100.;
+        let scale =
+            f.scale(Scale::new([0., 35000.], Normalization::Linear, ColorMap::viridis()).unwrap());
+        let mut bar = Colorbar::new(
+            Rect::new(20., 15., 4., 60.),
+            scale,
+            "Range (km)",
+            vec![0., 35000.],
+        );
+        bar.tick_labels = Some(vec!["zero".into()]);
         f.colorbars.push(bar);
         assert!(f.validate().is_err());
-        f.colorbars[0].tick_labels=Some(vec!["0".into(),"35000".into()]);
+        f.colorbars[0].tick_labels = Some(vec!["0".into(), "35000".into()]);
         assert!(f.all_labels().contains(&"35000".into()));
-        assert!(!f.all_labels().iter().any(|s|s.contains("times")));
-        f.latex.cache="target/custom-colorbar-ticks".into();
+        assert!(!f.all_labels().iter().any(|s| s.contains("times")));
+        f.latex.cache = "target/custom-colorbar-ticks".into();
         assert!(f.svg().is_ok());
-        f.colorbars[0].horizontal=true;
-        f.colorbars[0].rect=Rect::new(20.,15.,100.,4.);
+        f.colorbars[0].horizontal = true;
+        f.colorbars[0].rect = Rect::new(20., 15., 100., 4.);
         assert!(f.svg().is_ok());
     }
     #[test]
     fn vertical_colorbar_reserves_actual_tick_width() {
-        let mut f=Figure::new(IntendedUse::Custom{width_mm:200.,font_pt:16.});
-        f.height_mm=110.;
-        let scale=f.scale(Scale::new([-5000.,39000.],Normalization::Linear,ColorMap::viridis()).unwrap());
-        f.panels.push(Panel::new(Rect::new(25.,15.,100.,60.),Axes::new([0.,1.],[0.,1.],"Time","Range")));
-        f.colorbars.push(Colorbar::new(Rect::new(135.,15.,4.,60.),scale,"Virtual range (km)",vec![-5000.,10000.,39000.]));
-        f.latex.cache="target/colorbar-spacing-test".into();
+        let mut f = Figure::new(IntendedUse::Custom {
+            width_mm: 200.,
+            font_pt: 16.,
+        });
+        f.height_mm = 110.;
+        let scale = f.scale(
+            Scale::new([-5000., 39000.], Normalization::Linear, ColorMap::viridis()).unwrap(),
+        );
+        f.panels.push(Panel::new(
+            Rect::new(25., 15., 100., 60.),
+            Axes::new([0., 1.], [0., 1.], "Time", "Range"),
+        ));
+        f.colorbars.push(Colorbar::new(
+            Rect::new(135., 15., 4., 60.),
+            scale,
+            "Virtual range (km)",
+            vec![-5000., 10000., 39000.],
+        ));
+        f.latex.cache = "target/colorbar-spacing-test".into();
         assert!(f.svg().is_ok());
     }
     #[test]

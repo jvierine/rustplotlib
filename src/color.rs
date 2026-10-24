@@ -83,16 +83,26 @@ impl ColorMap {
     }
     /// Standard perceptually uniform viridis lookup table (Smith and van der Walt).
     pub fn viridis() -> Self {
-        Self { listed: true, stops: crate::palettes::VIRIDIS.to_vec() }
+        Self {
+            listed: true,
+            stops: crate::palettes::VIRIDIS.to_vec(),
+        }
     }
     /// Purple-blue-cyan-green-yellow-red rainbow for frequency-coded observations.
     pub fn rainbow() -> Self {
-        Self { listed: true, stops: (0..256).map(|i| {
-            let t = i as f64 / 255.;
-            [(2. * t - 0.5).abs().min(1.),
-             (std::f64::consts::PI * t).sin(),
-             (std::f64::consts::PI * t / 2.).cos()]
-        }).collect() }
+        Self {
+            listed: true,
+            stops: (0..256)
+                .map(|i| {
+                    let t = i as f64 / 255.;
+                    [
+                        (2. * t - 0.5).abs().min(1.),
+                        (std::f64::consts::PI * t).sin(),
+                        (std::f64::consts::PI * t / 2.).cos(),
+                    ]
+                })
+                .collect(),
+        }
     }
     /// Standard perceptually uniform plasma lookup table (Smith and van der Walt).
     pub fn plasma() -> Self {
@@ -291,15 +301,15 @@ mod native_palettes_test {
     use super::*;
     #[test]
     fn viridis_and_rainbow_lookup_endpoints_and_missing_values() {
-        let v=ColorMap::viridis();
-        assert_eq!(v.stops.len(),256);
-        assert_eq!(v.sample(0.),[68,1,84]);
-        assert_eq!(v.sample(1.),[253,231,37]);
-        let r=ColorMap::rainbow();
-        assert_eq!(r.sample(0.),[128,0,255]);
-        assert_eq!(r.sample(1.),[255,0,0]);
-        for c in [v,r] {
-            let scale=Scale::new([0.,1.],Normalization::Linear,c).unwrap();
+        let v = ColorMap::viridis();
+        assert_eq!(v.stops.len(), 256);
+        assert_eq!(v.sample(0.), [68, 1, 84]);
+        assert_eq!(v.sample(1.), [253, 231, 37]);
+        let r = ColorMap::rainbow();
+        assert_eq!(r.sample(0.), [128, 0, 255]);
+        assert_eq!(r.sample(1.), [255, 0, 0]);
+        for c in [v, r] {
+            let scale = Scale::new([0., 1.], Normalization::Linear, c).unwrap();
             assert!(scale.map(f64::NAN).is_none());
             assert!(scale.map(0.5).is_some());
         }
