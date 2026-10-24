@@ -946,6 +946,49 @@ fn raster_polygons(mesh: &PolygonMesh, panel: &Panel, scale: &Scale, dpi: f64) -
     out
 }
 
+// Coordinates match Panel::markers; SVG y is inverted relative to data y.
+fn render_legend_marker(
+    svg: &mut String,
+    shape: crate::MarkerShape,
+    color: &str,
+    x: f64,
+    y: f64,
+    size_pt: f64,
+) -> Result<()> {
+    use crate::MarkerShape;
+    let r = size_pt * MM_PER_PT / 2.;
+    if shape == MarkerShape::Circle {
+        write!(
+            svg,
+            "<circle cx=\"{x}\" cy=\"{y}\" r=\"{r}\" fill=\"{color}\"/>"
+        )?;
+    } else {
+        let vertices: &[[f64; 2]] = match shape {
+            MarkerShape::Square => &[[-1., -1.], [1., -1.], [1., 1.], [-1., 1.]],
+            MarkerShape::Diamond => &[[-1., 0.], [0., -1.], [1., 0.], [0., 1.]],
+            MarkerShape::Triangle => &[[0., 1.], [-0.866, -0.5], [0.866, -0.5]],
+            MarkerShape::HorizontalCap => &[[-1., 0.], [1., 0.]],
+            MarkerShape::VerticalCap => &[[0., -1.], [0., 1.]],
+            MarkerShape::Circle => unreachable!(),
+        };
+        let points = vertices
+            .iter()
+            .map(|v| format!("{},{}", x + r * v[0], y - r * v[1]))
+            .collect::<Vec<_>>()
+            .join(" ");
+        if vertices.len() == 2 {
+            write!(
+                svg,
+                "<polyline points=\"{points}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"{}\"/>",
+                0.6 * MM_PER_PT
+            )?;
+        } else {
+            write!(svg, "<polygon points=\"{points}\" fill=\"{color}\"/>")?;
+        }
+    }
+    Ok(())
+}
+
 impl Figure {
     pub fn new(use_case: IntendedUse) -> Self {
         let (w, font) = use_case.dimensions();
@@ -1241,6 +1284,7 @@ impl Figure {
                 let symbol_height = match e.symbol {
                     crate::LegendSymbol::Line { width_pt, .. } => width_pt,
                     crate::LegendSymbol::Circle { radius_pt, .. } => 2. * radius_pt,
+                    crate::LegendSymbol::Marker { size_pt, .. } => size_pt,
                 };
                 glyphs[&e.label].height_pt.max(symbol_height) * MM_PER_PT + 1.5
             })
@@ -1255,6 +1299,7 @@ impl Figure {
             .iter()
             .map(|entry| match entry.symbol {
                 crate::LegendSymbol::Circle { radius_pt, .. } => 2. * radius_pt * MM_PER_PT + 0.25,
+                crate::LegendSymbol::Marker { size_pt, .. } => size_pt * MM_PER_PT + 0.25,
                 crate::LegendSymbol::Line { .. } => 7.,
             })
             .fold(7., f64::max);
@@ -1324,6 +1369,13 @@ impl Figure {
                             .map(|d| format!("stroke-dasharray=\"{d}\""))
                             .unwrap_or_default()
                     )?;
+                }
+                crate::LegendSymbol::Marker {
+                    shape,
+                    color,
+                    size_pt,
+                } => {
+                    render_legend_marker(svg, *shape, color, x + symbol_width / 2., y, *size_pt)?;
                 }
                 crate::LegendSymbol::Circle { color, radius_pt } => {
                     write!(
@@ -2421,6 +2473,46 @@ mod tests {
         ));
         f.latex.cache = "target/colorbar-spacing-test".into();
         assert!(f.svg().is_ok());
+    }
+    #[test]
+    fn shape_keys_render_with_matching_geometry_and_export_guard() {
+        use crate::MarkerShape;
+        for (shape, tag) in [
+            (MarkerShape::Circle, "circle"),
+            (MarkerShape::Square, "polygon"),
+            (MarkerShape::Diamond, "polygon"),
+            (MarkerShape::Triangle, "polygon"),
+            (MarkerShape::HorizontalCap, "polyline"),
+            (MarkerShape::VerticalCap, "polyline"),
+        ] {
+            let mut svg = String::new();
+            render_legend_marker(&mut svg, shape, "#123456", 10., 20., 6.).unwrap();
+            assert!(svg.starts_with(&format!("<{tag} ")) && svg.contains("#123456"));
+            assert!(!svg.contains("NaN"));
+        }
+        let mut f = Figure::new(IntendedUse::ArticleWide);
+        let mut p = Panel::new(
+            Rect::new(20., 20., 140., 70.),
+            Axes::new([0., 1.], [0., 1.], "", ""),
+        );
+        let mut legend = Legend::new(vec![
+            LegendEntry::marker("Optical", MarkerShape::Circle, "#444444"),
+            LegendEntry::marker("Epoch", MarkerShape::Circle, "#111111"),
+        ]);
+        legend.avoid_data = false;
+        p.legend = Some(legend);
+        f.panels.push(p);
+        assert!(
+            f.svg()
+                .unwrap_err()
+                .to_string()
+                .contains("Ambiguous legend")
+        );
+        f.panels[0].legend.as_mut().unwrap().entries[1] =
+            LegendEntry::marker("Epoch", MarkerShape::Diamond, "#111111");
+        let svg = f.svg().unwrap();
+        let legend = svg.split("data-role=\"legend\"").nth(1).unwrap();
+        assert!(legend.contains("<circle ") && legend.contains("<polygon "));
     }
     #[test]
     fn secondary_axis_reserves_measured_negative_tick_width() {

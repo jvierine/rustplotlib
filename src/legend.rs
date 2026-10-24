@@ -1,5 +1,5 @@
 //! Compact, LaTeX-typeset legends with explicitly protected data layers.
-use crate::{Panel, Rect};
+use crate::{MarkerShape, Panel, Rect};
 use anyhow::{Result, ensure};
 
 #[derive(Clone, Copy, Debug)]
@@ -18,6 +18,12 @@ pub enum LegendSymbol {
         color: String,
         width_pt: f64,
         dash: Option<String>,
+    },
+    /// A key matching a plotted `MarkerStyle`; size is the full diameter.
+    Marker {
+        shape: MarkerShape,
+        color: String,
+        size_pt: f64,
     },
     Circle {
         color: String,
@@ -38,6 +44,16 @@ impl LegendEntry {
                 color: color.into(),
                 width_pt: 1.5,
                 dash: None,
+            },
+        }
+    }
+    pub fn marker(label: impl Into<String>, shape: MarkerShape, color: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            symbol: LegendSymbol::Marker {
+                shape,
+                color: color.into(),
+                size_pt: 5.2,
             },
         }
     }
@@ -63,6 +79,10 @@ pub struct Legend {
     /// Entries fill rows left-to-right. Column widths follow their labels.
     pub columns: usize,
     pub position: LegendPosition,
+    /// Explicit opt-out for categories intentionally distinguished only by colour.
+    /// Otherwise different labels must use different marker shapes, including
+    /// legacy `Circle` keys. Change the plotted markers as well as their keys.
+    pub allow_reused_marker_shapes: bool,
     pub avoid_data: bool,
     pub avoid_layers: Vec<usize>,
     pub padding_mm: f64,
@@ -74,6 +94,7 @@ impl Legend {
             entries,
             columns: 1,
             position: LegendPosition::UpperRight,
+            allow_reused_marker_shapes: false,
             avoid_data: true,
             avoid_layers: vec![],
             padding_mm: 2.,
@@ -99,13 +120,34 @@ impl Legend {
             self.avoid_layers.iter().all(|i| *i < panel.layers.len()),
             "Unknown protected legend layer"
         );
+        let mut marker_keys: Vec<(MarkerShape, &str)> = vec![];
         for entry in &self.entries {
             ensure!(!entry.label.is_empty(), "Empty legend label");
             let size = match &entry.symbol {
                 LegendSymbol::Line { width_pt, .. } => *width_pt,
                 LegendSymbol::Circle { radius_pt, .. } => *radius_pt,
+                LegendSymbol::Marker { size_pt, .. } => *size_pt,
             };
             ensure!(size.is_finite() && size > 0., "Invalid legend symbol size");
+            let shape = match &entry.symbol {
+                LegendSymbol::Circle { .. } => Some(MarkerShape::Circle),
+                LegendSymbol::Marker { shape, .. } => Some(*shape),
+                LegendSymbol::Line { .. } => None,
+            };
+            if let Some(shape) = shape {
+                if !self.allow_reused_marker_shapes {
+                    for &(previous_shape, previous_label) in &marker_keys {
+                        ensure!(
+                            previous_shape != shape || previous_label == entry.label,
+                            "Ambiguous legend: '{}' and '{}' both use {:?} markers. Use distinct MarkerShape values in the plotted data and LegendEntry::marker keys, or explicitly set allow_reused_marker_shapes = true for intentional colour-only categories",
+                            previous_label,
+                            entry.label,
+                            shape
+                        );
+                    }
+                }
+                marker_keys.push((shape, &entry.label));
+            }
         }
         Ok(())
     }
@@ -180,6 +222,42 @@ impl Legend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn test_panel() -> Panel {
+        Panel::new(
+            Rect::new(0., 0., 80., 60.),
+            crate::Axes::new([0., 1.], [0., 1.], "x", "y"),
+        )
+    }
+    #[test]
+    fn rejects_same_shape_even_with_different_colours_and_sizes() {
+        let legend = Legend::new(vec![
+            LegendEntry::circle("Optical", "#444444"),
+            LegendEntry::marker("Fitted epoch state", MarkerShape::Circle, "#111111"),
+        ]);
+        let error = legend.validate(&test_panel()).unwrap_err().to_string();
+        assert!(error.contains("Optical") && error.contains("Fitted epoch state"));
+        assert!(error.contains("Ambiguous legend"));
+        let legacy = Legend::new(vec![
+            LegendEntry::circle("A", "gray"),
+            LegendEntry::circle("B", "black"),
+        ]);
+        assert!(legacy.validate(&test_panel()).is_err());
+    }
+    #[test]
+    fn distinct_shapes_pass_and_intentional_reuse_requires_opt_out() {
+        let mut legend = Legend::new(vec![
+            LegendEntry::circle("Optical", "gray"),
+            LegendEntry::marker("Fitted epoch state", MarkerShape::Diamond, "black"),
+            LegendEntry::marker("TLE epoch", MarkerShape::Square, "purple"),
+        ]);
+        legend.validate(&test_panel()).unwrap();
+        legend
+            .entries
+            .push(LegendEntry::circle("Other optical", "red"));
+        assert!(legend.validate(&test_panel()).is_err());
+        legend.allow_reused_marker_shapes = true;
+        legend.validate(&test_panel()).unwrap();
+    }
     #[test]
     fn compact_external_legend_leaves_the_data_panel_clear() {
         let mut legend = Legend::new(vec![LegendEntry::line("Receiver", "blue")]);

@@ -55,7 +55,26 @@ Web exports also trim blank outer margins by default and update the embed width
 without enlarging the labels. Use `save_fixed_for_web` when fixed animation
 frames or deliberate whitespace are needed.
 
+## Unambiguous marker legends
+
+Point keys support the same shapes as plotted markers:
+
+```rust
+let optical = LegendEntry::marker("Optical", MarkerShape::Circle, "#444444");
+let epoch = LegendEntry::marker("Fitted epoch state", MarkerShape::Diamond, "#111111");
+let legend = Legend::new(vec![optical, epoch]);
+```
+
+Use the corresponding `MarkerShape` in each data series' `MarkerStyle` too.
+By default, export rejects different marker labels that reuse a shape, even if
+colours or sizes differ. This also checks legacy `LegendEntry::circle` keys.
+Rustplotlib does not silently change legend shapes, since that would misrepresent
+the plotted data. For categories deliberately distinguished only by colour, set
+`legend.allow_reused_marker_shapes = true` explicitly. Line keys remain colour-
+and dash-based.
+
 ## Scientific examples
+
 
 Native scientific exports, interactive WebGL pages, and simulation animations.
 Click a figure to open its PDF, animation, or interactive view.
