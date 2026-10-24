@@ -29,6 +29,36 @@ Plain drag pans; Cmd/Ctrl + wheel zooms; right-click resets. Plain wheel scrolli
 is never intercepted. An optional fourth callback supplies the axes rectangle
 for canvases containing margins, such as `SeriesView`.
 
+
+`FieldView.set_reduction("max")` and `HeatmapView.set_reduction("max")` preserve
+isolated observations and narrow peaks when many source cells fit into a screen
+pixel. Every intersecting source cell contributes to a finite maximum; a fully
+missing footprint stays white. Both regular and rectilinear rasters are supported.
+The default remains `"nearest"`. Reduction affects display only, not source data,
+coordinates, normalization, or the colorbar. Choose maximum reduction for sparse
+RTIs or peak-sensitive spectra, rather than interpolating gaps or changing the
+underlying time bins.
+
+`HeatmapView.set_palette("plasma")`, `set_markers(true)`, and
+`add_band(low, high, label)` provide a shared scientific palette, visible sparse
+marks, and labeled physical-coordinate regions. The same palette drives the
+field and its colorbar; point marks and bands follow zoom and pan.
+
+`HeatmapView.update_rows(firstRow, values)` updates complete texture rows without
+replacing a viewport. `set_rectilinear_data(xCenters, yCenters, values)` preserves
+irregular physical sampling. Free offscreen heatmaps to release their owned
+WebGL contexts.
+
+`bindColorbarEditor(axesCanvas, heatmap, {automaticLimits, onChange})` opens the
+shared numeric limit editor when the colorbar is clicked. It accepts the typed
+array returned by WASM `scale_limits()`.
+
+`SeriesView.set_time_axis()` adds UTC ticks before drawing daily line data.
+`SeriesView.begin_map(width,height,dpr,west,east,south,north)` fits a Mercator map
+with equal projected x/y scale; subsequent series and labels use geographic
+longitude/latitude degrees. Labels choose nearby free space to reduce overlap.
+The projection is limited to 85 degrees latitude.
+
 ## Indexed 3D surfaces
 
 MeshView(canvas) renders actual indexed triangles in WebGL2 with a perspective
