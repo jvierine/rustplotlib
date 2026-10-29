@@ -3,6 +3,8 @@ pub use viewport::PlotViewport;
 
 mod series;
 pub use series::SeriesView;
+mod line_plot;
+pub use line_plot::LinePlot;
 // Browser GPU rendering; JavaScript only boots WASM and connects controls.
 use wasm_bindgen::prelude::*;
 use web_sys::{
