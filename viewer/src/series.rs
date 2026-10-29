@@ -91,6 +91,19 @@ impl SeriesView {
         c.set_font("17px Palatino, 'Palatino Linotype', 'Book Antiqua', serif");c.set_fill_style_str("#222");c.set_text_align("center");c.fill_text(xlabel,(70.+width-18.)/2.,height-7.)?;
         c.save();c.translate(15.,(30.+height-48.)/2.)?;c.rotate(-std::f64::consts::FRAC_PI_2)?;c.fill_text(ylabel,0.,0.)?;c.restore();c.set_text_align("left");Ok(())
     }
+    /// Standalone secondary y axis using the same typography and ticks as begin_axes.
+    pub fn right_axis(&self,width:f64,height:f64,dpr:f64,y0:f64,y1:f64,label:&str)->Result<(),JsValue>{
+        if ![width,height,dpr,y0,y1].iter().all(|v|v.is_finite())||y1<=y0||dpr<=0.{return Err(JsValue::from_str("Invalid secondary axis"));}
+        self.canvas.set_width((width*dpr).round()as u32);self.canvas.set_height((height*dpr).round()as u32);
+        let c=&self.ctx;c.set_transform(dpr,0.,0.,dpr,0.,0.)?;
+        c.set_font("16px Palatino, 'Palatino Linotype', 'Book Antiqua', serif");c.set_fill_style_str("#222");c.set_stroke_style_str("#444");c.set_line_width(0.7);c.set_text_align("left");
+        c.begin_path();c.move_to(1.,30.);c.line_to(1.,height-48.);c.stroke();
+        let desired=(y1-y0)/4.;let power=10_f64.powf(desired.log10().floor());
+        let step=[1.,2.,2.5,5.,10.].into_iter().map(|v|v*power).min_by(|a,b|(a/desired).ln().abs().total_cmp(&(b/desired).ln().abs())).unwrap();
+        let precision=(0..=6).find(|&d|{let v=step*10_f64.powi(d);(v-v.round()).abs()<1e-8}).unwrap_or(6)as usize;
+        for j in(y0/step).ceil()as i64..=(y1/step).floor()as i64{let y=j as f64*step;let py=height-48.-(y-y0)/(y1-y0)*(height-78.);c.begin_path();c.move_to(1.,py);c.line_to(5.5,py);c.stroke();c.fill_text(&format!("{y:.precision$}"),10.,py+5.)?;}
+        c.set_font("17px Palatino, 'Palatino Linotype', 'Book Antiqua', serif");c.set_text_align("center");c.save();c.translate(width-15.,(height-18.)/2.)?;c.rotate(std::f64::consts::FRAC_PI_2)?;c.fill_text(label,0.,0.)?;c.restore();Ok(())
+    }
     pub fn x_ticks(&self, wrapped:bool, top:bool)->Result<(),JsValue>{
         let c=&self.ctx;c.set_font("16px Palatino, 'Palatino Linotype', 'Book Antiqua', serif");c.set_text_align("center");c.set_fill_style_str("#222");
         let span=self.bounds[1]-self.bounds[0];let desired=span/5.;let power=10_f64.powf(desired.log10().floor());let step=if span>300.&&span<=500.{90.}else{[1.,2.,2.5,5.,10.].into_iter().map(|v|v*power).find(|&v|v>=desired).unwrap_or(power*10.)};
