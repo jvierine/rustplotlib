@@ -95,9 +95,13 @@ pub struct SeriesView {
     bounds: [f64; 4],
     rect: [f64; 4],
     line_width: f64,
+    color_limits: [f64; 2],
 }
 #[wasm_bindgen]
 impl SeriesView {
+    pub fn color_limits(&self) -> Vec<f64> {
+        self.color_limits.to_vec()
+    }
     #[wasm_bindgen(constructor)]
     pub fn new(canvas: HtmlCanvasElement) -> Result<SeriesView, JsValue> {
         let ctx = canvas
@@ -112,6 +116,7 @@ impl SeriesView {
             bounds: [0., 1., 0., 1.],
             rect: [55., 20., 525., 175.],
             line_width: 1.7,
+            color_limits: [0., 1.],
         })
     }
     /// CSS dimensions and device pixel ratio are separate, preserving font size.
@@ -309,6 +314,7 @@ impl SeriesView {
             return Err(JsValue::from_str("Series panel is too small"));
         }
         if let Some(field) = &spec.field {
+            self.color_limits = field.limits;
             self.draw_field(field)?;
         }
         for (i, s) in entries.iter().enumerate() {

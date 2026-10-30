@@ -24,6 +24,9 @@ The native `SeriesView.render_plot` accepts these optional figure fields:
 Use `InteractiveSeriesPlot.mount(root,spec,{height:220,compact:true})` to omit
 the repeated toolbar inside a compact dashboard. Zoom, pan, keyboard reset and
 double-click reset remain enabled. The default still displays the toolbar.
+Click a scalar-field or sky-map colorbar to open the built-in limit sliders.
+Limits persist through data refreshes. Native `SeriesView.color_limits()`
+reports the actual limits, including automatic density scaling.
 
 The browser computes and renders these display operations in Rust/WASM. No
 server image rendering, radar signal processing, or page-specific axis labels

@@ -24,6 +24,8 @@ struct SkyDensity {
     central_longitude: f64,
     #[serde(default = "line_default")]
     west_positive: bool,
+    #[serde(default)]
+    limits: Option<[f64; 2]>,
 }
 fn default_nside() -> usize {
     32
@@ -336,7 +338,13 @@ impl SeriesView {
                 bins[healpix_ring(sky.nside, *lon, *lat)] += 1;
             }
         }
-        let lim = [0., (*bins.iter().max().unwrap_or(&1)).max(1) as f64];
+        let lim = sky
+            .limits
+            .unwrap_or([0., (*bins.iter().max().unwrap_or(&1)).max(1) as f64]);
+        if !lim.iter().all(|v| v.is_finite()) || lim[1] <= lim[0] {
+            return Err(JsValue::from_str("Invalid sky color limits"));
+        }
+        self.color_limits = lim;
         let [left, top, _, _] = self.rect;
         for iy in (0..h.ceil() as usize).step_by(2) {
             for ix in (0..w.ceil() as usize).step_by(2) {
