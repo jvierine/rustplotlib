@@ -1,6 +1,6 @@
 import init, {SeriesView,PlotViewport} from '../pkg/rustplotlib_web.js';
 
-export type SeriesSpec={bounds:[number,number,number,number];xlabel:string;ylabel:string;utc_origin_seconds?:number;categories?:string[];bars?:boolean;equal_aspect?:boolean;sky?:{lonlat:number[][];nside?:number;central_longitude?:number;west_positive?:boolean;limits?:[number,number]};field?:{x:number[];y:number[];values:(number|null)[];limits:[number,number];palette?:string;label?:string;missing_value?:number};series:{name?:string;color:string;points:(number|null)[][];line?:boolean;radius?:number;errors?:(number|null)[];line_width?:number;fill?:string}[]};
+export type SeriesSpec={bounds:[number,number,number,number];xlabel:string;ylabel:string;utc_origin_seconds?:number;categories?:string[];bars?:boolean;equal_aspect?:boolean;sky?:{paper_style?:boolean;lonlat:number[][];nside?:number;central_longitude?:number;west_positive?:boolean;limits?:[number,number]};field?:{x:number[];y:number[];values:(number|null)[];limits:[number,number];palette?:string;label?:string;missing_value?:number};series:{name?:string;color:string;points:(number|null)[][];line?:boolean;radius?:number;errors?:(number|null)[];line_width?:number;fill?:string}[]};
 let ready:Promise<unknown>|undefined;
 /** Data and native axes are drawn in Rust/WASM. Interaction is enabled by default. */
 export class InteractiveSeriesPlot {
@@ -50,7 +50,8 @@ export class InteractiveSeriesPlot {
     for(const [i,name]of ['Minimum value','Maximum value'].entries()){
       const label=document.createElement('label'),input=document.createElement('input'),output=document.createElement('output');
       label.textContent=name+' ';input.type='range';input.setAttribute('aria-label',name);
-      input.min=String(Math.min(0,limits[0]*2));input.max=String(Math.max(30,limits[1]*2));input.step='0.1';input.value=String(limits[i]);output.value=String(limits[i]);
+      const logarithmic=this.spec.sky?.paper_style;
+      input.min=String(logarithmic?limits[0]/10:Math.min(0,limits[0]*2));input.max=String(logarithmic?limits[1]*2:Math.max(30,limits[1]*2));input.step=logarithmic?String(limits[0]/10):'0.1';input.value=String(limits[i]);output.value=String(limits[i]);
       input.style.display='block';label.append(input,output);editor.append(label);inputs.push(input);outputs.push(output);
     }
     const change=()=>{const low=Number(inputs[0].value),high=Number(inputs[1].value);outputs[0].value=String(low);outputs[1].value=String(high);if(high>low){this.colorOverride=[low,high];this.setSpec(this.spec);}};

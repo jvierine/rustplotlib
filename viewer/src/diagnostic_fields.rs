@@ -17,6 +17,8 @@ fn default_palette() -> String {
 }
 #[derive(Deserialize)]
 struct SkyDensity {
+    #[serde(default)]
+    paper_style: bool,
     lonlat: Vec<[f64; 2]>,
     #[serde(default = "default_nside")]
     nside: usize,
@@ -32,6 +34,19 @@ fn default_nside() -> usize {
 }
 fn default_center() -> f64 {
     270.
+}
+// Hammer equal-area projection used by the PANSY paper; west increases leftward.
+fn hammer(lon: f64, lat: f64, center: f64, west: bool) -> [f64; 2] {
+    let d = ((lon-center+180.).rem_euclid(360.)-180.).to_radians() * if west {-1.} else {1.};
+    let p = lat.to_radians();
+    let q = (1.+p.cos()*(d/2.).cos()).sqrt();
+    [2.*2_f64.sqrt()*p.cos()*(d/2.).sin()/q, 2_f64.sqrt()*p.sin()/q]
+}
+fn inverse_hammer(x:f64,y:f64,center:f64,west:bool)->Option<[f64;2]> {
+    if x*x/8.+y*y/2.>1.+1e-10 {return None;}
+    let z=(1.-x*x/16.-y*y/4.).max(0.).sqrt();
+    let d=2.*(z*x).atan2(2.*(2.*z*z-1.));
+    Some([(center+d.to_degrees()*if west {-1.}else{1.}).rem_euclid(360.),(z*y).clamp(-1.,1.).asin().to_degrees()])
 }
 fn equal_aspect_rect(rect: [f64; 4], dx: f64, dy: f64) -> [f64; 4] {
     let scale = (rect[2] / dx).min(rect[3] / dy);
@@ -126,7 +141,11 @@ fn healpix_ring(n: usize, lon: f64, lat: f64) -> usize {
 }
 fn palette(value: f64, limits: [f64; 2], name: &str) -> String {
     let t = ((value - limits[0]) / (limits[1] - limits[0])).clamp(0., 1.);
-    let anchors = if name == "plasma" {
+    let anchors = if name == "magma" {
+        &[[0.,0.,4.],[18.,14.,54.],[59.,15.,112.],[100.,26.,128.],
+          [140.,41.,129.],[183.,55.,121.],[222.,73.,104.],[247.,112.,92.],
+          [254.,159.,109.],[254.,207.,146.],[252.,253.,191.]][..]
+    } else if name == "plasma" {
         &[
             [13., 8., 135.],
             [126., 3., 168.],
@@ -326,6 +345,8 @@ impl SeriesView {
         let h = w / 2.;
         self.rect = [52. + (width - 148. - w) / 2., 18., w, h];
         let r = 2_f64.sqrt();
+        let project = if sky.paper_style { hammer } else { mollweide };
+        let inverse = if sky.paper_style { inverse_hammer } else { inverse_mollweide };
         self.bounds = [
             -2. * r + viewport[0] * 4. * r,
             -2. * r + viewport[2] * 4. * r,
@@ -338,38 +359,51 @@ impl SeriesView {
                 bins[healpix_ring(sky.nside, *lon, *lat)] += 1;
             }
         }
+        let area = 41252.96124941927 / bins.len() as f64;
+        let divisor = if sky.paper_style {area} else {1.};
         let lim = sky
             .limits
-            .unwrap_or([0., (*bins.iter().max().unwrap_or(&1)).max(1) as f64]);
-        if !lim.iter().all(|v| v.is_finite()) || lim[1] <= lim[0] {
+            .unwrap_or([if sky.paper_style {0.5/area} else {0.}, (*bins.iter().max().unwrap_or(&1)).max(if sky.paper_style {2} else {1}) as f64 / divisor]);
+        if !lim.iter().all(|v| v.is_finite()) || lim[1] <= lim[0] || (sky.paper_style && lim[0]<=0.) {
             return Err(JsValue::from_str("Invalid sky color limits"));
         }
         self.color_limits = lim;
         let [left, top, _, _] = self.rect;
-        for iy in (0..h.ceil() as usize).step_by(2) {
-            for ix in (0..w.ceil() as usize).step_by(2) {
-                let x = self.bounds[0] + (ix as f64 + 1.) / w * (self.bounds[1] - self.bounds[0]);
-                let y = self.bounds[3] - (iy as f64 + 1.) / h * (self.bounds[3] - self.bounds[2]);
+        let color = |value:f64| {
+            if sky.paper_style {
+                if value<=0. {"#000000".into()} else {palette(value.log10(),[lim[0].max(1e-12).log10(),lim[1].log10()],"magma")}
+            } else {palette(value,lim,"turbo")}
+        };
+        c.save();
+        c.begin_path();
+        c.ellipse(self.px(0.),self.py(0.),(self.px(2.*r)-self.px(0.)).abs(),(self.py(r)-self.py(0.)).abs(),0.,0.,std::f64::consts::TAU)?;
+        c.clip();
+        c.set_fill_style_str("black");c.fill_rect(left,top,w,h);
+        for iy in 0..h.ceil() as usize {
+            for ix in 0..w.ceil() as usize {
+                let x = self.bounds[0] + (ix as f64 + 0.5) / w * (self.bounds[1] - self.bounds[0]);
+                let y = self.bounds[3] - (iy as f64 + 0.5) / h * (self.bounds[3] - self.bounds[2]);
                 if let Some([lon, lat]) =
-                    inverse_mollweide(x, y, sky.central_longitude, sky.west_positive)
+                    inverse(x, y, sky.central_longitude, sky.west_positive)
                 {
                     let count = bins[healpix_ring(sky.nside, lon, lat)];
-                    c.set_fill_style_str(&palette(count as f64, lim, "turbo"));
-                    c.fill_rect(left + ix as f64, top + iy as f64, 2.1, 2.1);
+                    c.set_fill_style_str(&color(count as f64/divisor));
+                    c.fill_rect(left + ix as f64, top + iy as f64, 1., 1.);
                 }
             }
         }
+        c.restore();
         c.save();
         c.begin_path();
         c.rect(left, top, w, h);
         c.clip();
         c.set_line_width(0.6);
-        c.set_stroke_style_str("#ffffff88");
+        c.set_stroke_style_str(if sky.paper_style {"#80808055"} else {"#ffffff88"});
         for lat in [-60., -30., 0., 30., 60.] {
             c.begin_path();
             for i in 0..=180 {
                 let d = -179.999 + i as f64 * 359.998 / 180.;
-                let p = mollweide(
+                let p = project(
                     sky.central_longitude + d,
                     lat,
                     sky.central_longitude,
@@ -383,10 +417,11 @@ impl SeriesView {
             }
             c.stroke();
         }
-        for lon in (0..360).step_by(30) {
+        for lon in (0..360).step_by(if sky.paper_style {90} else {30}) {
+            if sky.paper_style && lon == 270 {continue;}
             c.begin_path();
             for i in 0..=90 {
-                let p = mollweide(
+                let p = project(
                     lon as f64,
                     -89.999 + i as f64 * 179.998 / 90.,
                     sky.central_longitude,
@@ -409,7 +444,8 @@ impl SeriesView {
             (180., "180°"),
             (270., "270° · apex"),
         ] {
-            let p = mollweide(lon, 0., sky.central_longitude, sky.west_positive);
+            if sky.paper_style {continue;}
+            let p = project(lon, 0., sky.central_longitude, sky.west_positive);
             c.fill_text(
                 label,
                 self.px(p[0]).clamp(left + 18., left + w - 18.),
@@ -418,7 +454,7 @@ impl SeriesView {
         }
         c.restore();
         c.set_fill_style_str("#111");
-        c.set_font("15px Palatino,serif");
+        c.set_font(if sky.paper_style {"15px Arial,sans-serif"} else {"15px Palatino,serif"});
         c.set_text_align("center");
         c.fill_text(&spec.xlabel, left + w / 2., top + h + 30.)?;
         c.save();
@@ -427,20 +463,26 @@ impl SeriesView {
         c.fill_text(&spec.ylabel, 0., 0.)?;
         c.restore();
         c.set_text_align("right");
-        c.set_font("12px Palatino,serif");
+        c.set_font(if sky.paper_style {"12px Arial,sans-serif"} else {"12px Palatino,serif"});
         for lat in [-60., -30., 0., 30., 60.] {
-            let p = mollweide(
-                sky.central_longitude,
+            let p = project(
+                sky.central_longitude + if sky.paper_style {179.999} else {0.},
                 lat,
                 sky.central_longitude,
                 sky.west_positive,
             );
             let y = self.py(p[1]);
             if y >= top && y <= top + h {
-                c.fill_text(&format!("{lat:.0}°"), left - 5., y + 4.)?;
+                c.fill_text(&format!("{lat:.0}°"), if sky.paper_style {self.px(p[0])-5.} else {left-5.}, y + 4.)?;
             }
         }
-        self.colorbar(lim, "turbo", "Meteors / HEALPix cell")?;
+        if sky.paper_style {
+            let x=left+w+14.;
+            for i in 0..128 {let f=i as f64/127.;let v=(lim[0].ln()+f*(lim[1].ln()-lim[0].ln())).exp();c.set_fill_style_str(&color(v));c.fill_rect(x,top+h*(1.-(i+1) as f64/128.),12.,h/128.+0.5);}
+            c.set_fill_style_str("#111");c.set_font("12px Arial,sans-serif");c.set_text_align("left");
+            for f in [0.,0.5,1.] {let v=(lim[0].ln()+f*(lim[1].ln()-lim[0].ln())).exp();c.fill_text(&format!("{v:.2}"),x+16.,top+h*(1.-f)+4.)?;}
+            c.save();c.translate(width-8.,top+h/2.)?;c.rotate(-std::f64::consts::FRAC_PI_2)?;c.set_text_align("center");c.fill_text("Count density (deg⁻²)",0.,0.)?;c.restore();
+        } else {self.colorbar(lim, "turbo", "Meteors / HEALPix cell")?;}
         Ok(self.rect.to_vec())
     }
 }
@@ -448,6 +490,17 @@ impl SeriesView {
 #[cfg(test)]
 mod diagnostics_tests {
     use super::*;
+    #[test]
+    fn hammer_roundtrip_and_orientation() {
+        for lat in [-89.,-60.,0.,60.,89.] {for lon in [0.,45.,90.,180.,270.,359.] {
+            let p=hammer(lon,lat,270.,true);let q=inverse_hammer(p[0],p[1],270.,true).unwrap();
+            assert!((q[1]-lat).abs()<1e-8);
+            assert!(((q[0]-lon+180.).rem_euclid(360.)-180.).abs()<1e-8);
+        }}
+        assert!(hammer(0.,0.,270.,true)[0]<0.);
+        assert!(hammer(180.,0.,270.,true)[0]>0.);
+        assert!(inverse_hammer(3.,0.,270.,true).is_none());
+    }
     #[test]
     fn equal_axes_preserve_metric_distances() {
         let r = equal_aspect_rect([20., 10., 400., 200.], 70., 70.);
