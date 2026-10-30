@@ -17,6 +17,8 @@ struct PlotSeries {
     errors: Vec<Option<f64>>,
     #[serde(default = "line_width_default")]
     line_width: f64,
+    #[serde(default)]
+    fill: Option<String>,
 }
 fn line_default() -> bool {
     true
@@ -40,6 +42,8 @@ struct SeriesSpec {
     sky: Option<SkyDensity>,
     #[serde(default)]
     field: Option<FieldData>,
+    #[serde(default)]
+    equal_aspect: bool,
 }
 include!("diagnostic_fields.rs");
 fn nice_ticks(lo: f64, hi: f64, target: usize) -> Vec<f64> {
@@ -295,6 +299,12 @@ impl SeriesView {
         let rows = entries.len().div_ceil(columns);
         let top = 18. + rows as f64 * 23.;
         self.rect = [left, top, width - left - right, height - top - 63.];
+        if spec.equal_aspect {
+            self.rect = equal_aspect_rect(self.rect, x1 - x0, y1 - y0);
+        }
+        let [left, top, plot_width, plot_height] = self.rect;
+        let right = width - left - plot_width;
+        let bottom = top + plot_height;
         if self.rect[2] < 70. || self.rect[3] < 35. {
             return Err(JsValue::from_str("Series panel is too small"));
         }
@@ -366,18 +376,18 @@ impl SeriesView {
             c.set_stroke_style_str("#e1e7eb");
             c.begin_path();
             c.move_to(px, top);
-            c.line_to(px, height - 63.);
+            c.line_to(px, bottom);
             c.stroke();
             c.set_fill_style_str("#172134");
-            c.fill_text(&label, px, height - 41.)?;
+            c.fill_text(&label, px, bottom + 22.)?;
         }
         c.set_stroke_style_str("#526b7d");
         c.begin_path();
         c.move_to(left, top);
-        c.line_to(left, height - 63.);
-        c.line_to(width - right, height - 63.);
+        c.line_to(left, bottom);
+        c.line_to(width - right, bottom);
         c.stroke();
-        c.fill_text(&spec.xlabel, left + self.rect[2] / 2., height - 10.)?;
+        c.fill_text(&spec.xlabel, left + self.rect[2] / 2., bottom + 53.)?;
         c.save();
         c.translate(17., top + self.rect[3] / 2.)?;
         c.rotate(-std::f64::consts::FRAC_PI_2)?;
@@ -385,6 +395,9 @@ impl SeriesView {
         c.restore();
         for s in &spec.series {
             self.line_width = s.line_width;
+            if let Some(color) = &s.fill {
+                self.fill_polygon(s, color)?;
+            }
             let xy: Vec<f64> = s
                 .points
                 .iter()

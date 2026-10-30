@@ -31,6 +31,17 @@ fn default_nside() -> usize {
 fn default_center() -> f64 {
     270.
 }
+fn equal_aspect_rect(rect: [f64; 4], dx: f64, dy: f64) -> [f64; 4] {
+    let scale = (rect[2] / dx).min(rect[3] / dy);
+    let w = scale * dx;
+    let h = scale * dy;
+    [
+        rect[0] + (rect[2] - w) / 2.,
+        rect[1] + (rect[3] - h) / 2.,
+        w,
+        h,
+    ]
+}
 fn mollweide(lon: f64, lat: f64, center: f64, west: bool) -> [f64; 2] {
     let mut d = (lon - center + 180.).rem_euclid(360.) - 180.;
     if west {
@@ -141,6 +152,30 @@ fn palette(value: f64, limits: [f64; 2], name: &str) -> String {
     format!("rgb({},{},{})", rgb[0], rgb[1], rgb[2])
 }
 impl SeriesView {
+    fn fill_polygon(&self, s: &PlotSeries, color: &str) -> Result<(), JsValue> {
+        let c = &self.ctx;
+        c.save();
+        c.begin_path();
+        c.rect(self.rect[0], self.rect[1], self.rect[2], self.rect[3]);
+        c.clip();
+        c.begin_path();
+        let mut first = true;
+        for p in &s.points {
+            if let [Some(x), Some(y)] = *p {
+                if first {
+                    c.move_to(self.px(x), self.py(y));
+                    first = false;
+                } else {
+                    c.line_to(self.px(x), self.py(y));
+                }
+            }
+        }
+        c.close_path();
+        c.set_fill_style_str(color);
+        c.fill();
+        c.restore();
+        Ok(())
+    }
     fn colorbar(&self, limits: [f64; 2], name: &str, label: &str) -> Result<(), JsValue> {
         let c = &self.ctx;
         let [l, t, w, h] = self.rect;
@@ -405,6 +440,12 @@ impl SeriesView {
 #[cfg(test)]
 mod diagnostics_tests {
     use super::*;
+    #[test]
+    fn equal_axes_preserve_metric_distances() {
+        let r = equal_aspect_rect([20., 10., 400., 200.], 70., 70.);
+        assert!((r[2] - r[3]).abs() < 1e-12);
+        assert_eq!(r, [120., 10., 200., 200.]);
+    }
     #[test]
     fn projection_round_trips_and_apex_is_central() {
         for lat in [-89., -60., 0., 60., 89.] {

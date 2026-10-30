@@ -1,6 +1,6 @@
 import init, {SeriesView,PlotViewport} from '../pkg/rustplotlib_web.js';
 
-export type SeriesSpec={bounds:[number,number,number,number];xlabel:string;ylabel:string;utc_origin_seconds?:number;categories?:string[];bars?:boolean;sky?:{lonlat:number[][];nside?:number;central_longitude?:number;west_positive?:boolean};field?:{x:number[];y:number[];values:(number|null)[];limits:[number,number];palette?:string;label?:string;missing_value?:number};series:{name?:string;color:string;points:(number|null)[][];line?:boolean;radius?:number;errors?:(number|null)[];line_width?:number}[]};
+export type SeriesSpec={bounds:[number,number,number,number];xlabel:string;ylabel:string;utc_origin_seconds?:number;categories?:string[];bars?:boolean;equal_aspect?:boolean;sky?:{lonlat:number[][];nside?:number;central_longitude?:number;west_positive?:boolean};field?:{x:number[];y:number[];values:(number|null)[];limits:[number,number];palette?:string;label?:string;missing_value?:number};series:{name?:string;color:string;points:(number|null)[][];line?:boolean;radius?:number;errors?:(number|null)[];line_width?:number;fill?:string}[]};
 let ready:Promise<unknown>|undefined;
 /** Data and native axes are drawn in Rust/WASM. Interaction is enabled by default. */
 export class InteractiveSeriesPlot {

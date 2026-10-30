@@ -18,6 +18,8 @@ The native `SeriesView.render_plot` accepts these optional figure fields:
 - Per series, `errors` contains symmetric vertical half-lengths in y-axis units;
   `line_width` sets CSS-pixel stroke width. Error bars are not automatically
   interpreted as standard errors or confidence intervals.
+- `equal_aspect: true` preserves metric distances in position plots; a series
+  `fill` color closes/fills a polygon, for footprints or uncertainty regions.
 
 Use `InteractiveSeriesPlot.mount(root,spec,{height:220,compact:true})` to omit
 the repeated toolbar inside a compact dashboard. Zoom, pan, keyboard reset and
