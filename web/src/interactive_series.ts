@@ -1,6 +1,6 @@
 import init, {SeriesView,PlotViewport} from '../pkg/rustplotlib_web.js';
 
-export type SeriesSpec={bounds:[number,number,number,number];xlabel:string;ylabel:string;utc_origin_seconds?:number;series:{name?:string;color:string;points:(number|null)[][];line?:boolean;radius?:number}[]};
+export type SeriesSpec={bounds:[number,number,number,number];xlabel:string;ylabel:string;utc_origin_seconds?:number;categories?:string[];bars?:boolean;sky?:{lonlat:number[][];nside?:number;central_longitude?:number;west_positive?:boolean};field?:{x:number[];y:number[];values:(number|null)[];limits:[number,number];palette?:string;label?:string;missing_value?:number};series:{name?:string;color:string;points:(number|null)[][];line?:boolean;radius?:number;errors?:(number|null)[];line_width?:number}[]};
 let ready:Promise<unknown>|undefined;
 /** Data and native axes are drawn in Rust/WASM. Interaction is enabled by default. */
 export class InteractiveSeriesPlot {
@@ -13,7 +13,7 @@ export class InteractiveSeriesPlot {
   private drag?:{x:number;y:number;lastX:number;lastY:number;pan:boolean};
   private pending=0;
   private specJSON:string;
-  private constructor(private root:HTMLElement,private spec:SeriesSpec,private height:number){
+  private constructor(private root:HTMLElement,private spec:SeriesSpec,private height:number,compact=false){
     this.specJSON=JSON.stringify(spec);
     const toolbar=document.createElement('div'),reset=document.createElement('button'),help=document.createElement('span');
     toolbar.style.cssText='display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 6px 10px';
@@ -22,7 +22,7 @@ export class InteractiveSeriesPlot {
     const stage=document.createElement('div');stage.style.cssText='position:relative;background:white;';
     this.canvas.style.cssText='display:block;width:100%;touch-action:none';this.canvas.tabIndex=0;
     this.box.style.cssText='position:absolute;display:none;pointer-events:none;border:1px dashed #12669a;background:#12669a22';
-    stage.append(this.canvas,this.box);root.replaceChildren(toolbar,stage);
+    stage.append(this.canvas,this.box);root.replaceChildren(...compact?[stage]:[toolbar,stage]);
     this.view=new SeriesView(this.canvas);this.observer=new ResizeObserver(()=>this.schedule());this.observer.observe(root);
     const point=(e:PointerEvent|WheelEvent)=>{const r=this.canvas.getBoundingClientRect();return [Math.max(0,Math.min(1,(e.clientX-r.left-this.rect[0])/this.rect[2])),Math.max(0,Math.min(1,1-(e.clientY-r.top-this.rect[1])/this.rect[3]))];};
     this.canvas.addEventListener('wheel',e=>{e.preventDefault();const [x,y]=point(e);this.viewport.zoom(x,y,Math.exp(Math.max(-1,Math.min(1,e.deltaY*.002))));this.draw();},{passive:false});
@@ -34,8 +34,8 @@ export class InteractiveSeriesPlot {
     this.canvas.onpointercancel=()=>{this.drag=undefined;this.box.style.display='none';};
     this.draw();
   }
-  static async mount(root:HTMLElement,spec:SeriesSpec,options:{height?:number}={}){ready??=init();await ready;return new InteractiveSeriesPlot(root,spec,options.height||300);}
-  setSpec(spec:SeriesSpec){this.spec=spec;this.specJSON=JSON.stringify(spec);this.draw();}
+  static async mount(root:HTMLElement,spec:SeriesSpec,options:{height?:number;compact?:boolean}={}){ready??=init();await ready;return new InteractiveSeriesPlot(root,spec,options.height||300,options.compact);}
+  setSpec(spec:SeriesSpec){const next=JSON.stringify(spec);if(next===this.specJSON)return;this.spec=spec;this.specJSON=next;this.draw();}
   reset(){this.viewport.reset();this.draw();}
   private schedule(){cancelAnimationFrame(this.pending);this.pending=requestAnimationFrame(()=>this.draw());}
   private draw(){
