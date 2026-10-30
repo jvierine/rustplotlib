@@ -34,7 +34,7 @@ export class InteractiveSeriesPlot {
     this.canvas.onpointercancel=()=>{this.drag=undefined;this.box.style.display='none';};
     this.draw();
   }
-  static async mount(root:HTMLElement,spec:SeriesSpec,options:{height?:number;compact?:boolean}={}){ready??=init();await ready;return new InteractiveSeriesPlot(root,spec,options.height||300,options.compact);}
+  static async mount(root:HTMLElement,spec:SeriesSpec,options:{height?:number;compact?:boolean}={}){ready??=init().catch(error=>{ready=undefined;throw error;});await ready;return new InteractiveSeriesPlot(root,spec,options.height||300,options.compact);}
   setSpec(spec:SeriesSpec){const next=JSON.stringify(spec);if(next===this.specJSON)return;this.spec=spec;this.specJSON=next;this.draw();}
   reset(){this.viewport.reset();this.draw();}
   private schedule(){cancelAnimationFrame(this.pending);this.pending=requestAnimationFrame(()=>this.draw());}
