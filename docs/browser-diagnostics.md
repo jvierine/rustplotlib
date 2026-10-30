@@ -28,6 +28,15 @@ Click a scalar-field or sky-map colorbar to open the built-in limit sliders.
 Limits persist through data refreshes. Native `SeriesView.color_limits()`
 reports the actual limits, including automatic density scaling.
 
+Set `sky.paper_style: true` for a Hammer equal-area map with west-positive
+longitude, a black zero-count background, logarithmic magma density, subdued
+curved graticule, and latitude labels along the boundary. Density is counts
+per square degree (the HEALPix cell area is included); no exposure or selection
+correction is implied. Color limits use these physical density units and must
+be positive. The default lower limit is half a count per cell, so individual
+occupied cells remain visible. Coordinates and the central longitude retain
+the same meanings as in the default map. Sliders retain positive limits.
+
 The browser computes and renders these display operations in Rust/WASM. No
 server image rendering, radar signal processing, or page-specific axis labels
 are needed. A map's density color is counts per equal-area HEALPix cell, not
