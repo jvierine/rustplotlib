@@ -17,6 +17,12 @@ pub enum LegendPosition {
 
 #[derive(Clone, Debug)]
 pub enum LegendSymbol {
+    OutlinedMarker {
+        shape: MarkerShape,
+        color: String,
+        size_pt: f64,
+        width_pt: f64,
+    },
     Line {
         color: String,
         width_pt: f64,
@@ -40,6 +46,21 @@ pub struct LegendEntry {
     pub symbol: LegendSymbol,
 }
 impl LegendEntry {
+    pub fn outlined_marker(
+        label: impl Into<String>,
+        shape: MarkerShape,
+        color: impl Into<String>,
+    ) -> Self {
+        Self {
+            label: label.into(),
+            symbol: LegendSymbol::OutlinedMarker {
+                shape,
+                color: color.into(),
+                size_pt: 7.,
+                width_pt: 1.1,
+            },
+        }
+    }
     pub fn line(label: impl Into<String>, color: impl Into<String>) -> Self {
         Self {
             label: label.into(),
@@ -129,12 +150,22 @@ impl Legend {
         for entry in &self.entries {
             ensure!(!entry.label.is_empty(), "Empty legend label");
             let size = match &entry.symbol {
+                LegendSymbol::OutlinedMarker {
+                    size_pt, width_pt, ..
+                } => {
+                    ensure!(
+                        width_pt.is_finite() && *width_pt > 0.,
+                        "Invalid marker outline width"
+                    );
+                    *size_pt
+                }
                 LegendSymbol::Line { width_pt, .. } => *width_pt,
                 LegendSymbol::Circle { radius_pt, .. } => *radius_pt,
                 LegendSymbol::Marker { size_pt, .. } => *size_pt,
             };
             ensure!(size.is_finite() && size > 0., "Invalid legend symbol size");
             let shape = match &entry.symbol {
+                LegendSymbol::OutlinedMarker { shape, .. } => Some(*shape),
                 LegendSymbol::Circle { .. } => Some(MarkerShape::Circle),
                 LegendSymbol::Marker { shape, .. } => Some(*shape),
                 LegendSymbol::Line { .. } => None,

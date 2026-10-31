@@ -945,14 +945,20 @@ fn render_legend_marker(
     x: f64,
     y: f64,
     size_pt: f64,
+    outline_width_pt: Option<f64>,
 ) -> Result<()> {
     use crate::MarkerShape;
     let r = size_pt * MM_PER_PT / 2.;
+    let paint = if let Some(width) = outline_width_pt {
+        format!(
+            "fill=\"none\" stroke=\"{color}\" stroke-width=\"{}\"",
+            width * MM_PER_PT
+        )
+    } else {
+        format!("fill=\"{color}\"")
+    };
     if shape == MarkerShape::Circle {
-        write!(
-            svg,
-            "<circle cx=\"{x}\" cy=\"{y}\" r=\"{r}\" fill=\"{color}\"/>"
-        )?;
+        write!(svg, "<circle cx=\"{x}\" cy=\"{y}\" r=\"{r}\" {paint}/>")?;
     } else {
         let vertices: &[[f64; 2]] = match shape {
             MarkerShape::Square => &[[-1., -1.], [1., -1.], [1., 1.], [-1., 1.]],
@@ -971,10 +977,10 @@ fn render_legend_marker(
             write!(
                 svg,
                 "<polyline points=\"{points}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"{}\"/>",
-                0.6 * MM_PER_PT
+                outline_width_pt.unwrap_or(0.6) * MM_PER_PT
             )?;
         } else {
-            write!(svg, "<polygon points=\"{points}\" fill=\"{color}\"/>")?;
+            write!(svg, "<polygon points=\"{points}\" {paint}/>")?;
         }
     }
     Ok(())
@@ -1267,6 +1273,9 @@ impl Figure {
             .iter()
             .map(|e| {
                 let symbol_height = match e.symbol {
+                    crate::LegendSymbol::OutlinedMarker {
+                        size_pt, width_pt, ..
+                    } => size_pt + width_pt,
                     crate::LegendSymbol::Line { width_pt, .. } => width_pt,
                     crate::LegendSymbol::Circle { radius_pt, .. } => 2. * radius_pt,
                     crate::LegendSymbol::Marker { size_pt, .. } => size_pt,
@@ -1278,6 +1287,9 @@ impl Figure {
             .entries
             .iter()
             .map(|entry| match entry.symbol {
+                crate::LegendSymbol::OutlinedMarker {
+                    size_pt, width_pt, ..
+                } => (size_pt + width_pt) * MM_PER_PT + 0.25,
                 crate::LegendSymbol::Circle { radius_pt, .. } => 2. * radius_pt * MM_PER_PT + 0.25,
                 crate::LegendSymbol::Marker { size_pt, .. } => size_pt * MM_PER_PT + 0.25,
                 crate::LegendSymbol::Line { .. } => 7.,
@@ -1410,7 +1422,31 @@ impl Figure {
                     color,
                     size_pt,
                 } => {
-                    render_legend_marker(svg, *shape, color, x + symbol_width / 2., y, *size_pt)?;
+                    render_legend_marker(
+                        svg,
+                        *shape,
+                        color,
+                        x + symbol_width / 2.,
+                        y,
+                        *size_pt,
+                        None,
+                    )?;
+                }
+                crate::LegendSymbol::OutlinedMarker {
+                    shape,
+                    color,
+                    size_pt,
+                    width_pt,
+                } => {
+                    render_legend_marker(
+                        svg,
+                        *shape,
+                        color,
+                        x + symbol_width / 2.,
+                        y,
+                        *size_pt,
+                        Some(*width_pt),
+                    )?;
                 }
                 crate::LegendSymbol::Circle { color, radius_pt } => {
                     write!(
@@ -2464,7 +2500,7 @@ mod tests {
             (MarkerShape::VerticalCap, "polyline"),
         ] {
             let mut svg = String::new();
-            render_legend_marker(&mut svg, shape, "#123456", 10., 20., 6.).unwrap();
+            render_legend_marker(&mut svg, shape, "#123456", 10., 20., 6., None).unwrap();
             assert!(svg.starts_with(&format!("<{tag} ")) && svg.contains("#123456"));
             assert!(!svg.contains("NaN"));
         }

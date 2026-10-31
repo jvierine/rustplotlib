@@ -55,6 +55,17 @@ Web exports also trim blank outer margins by default and update the embed width
 without enlarging the labels. Use `save_fixed_for_web` when fixed animation
 frames or deliberate whitespace are needed.
 
+## Overlapping marker categories
+
+Use `Panel::marker_groups(&[MarkerGroup { label, points, style }, ...])` for
+categorical scatter overlays. It returns a matching `Legend`. The default
+is open symbols with white outline halos: all halos are drawn first, then
+all category outlines. Thus a later filled symbol or halo cannot hide the
+earlier category. Measured coordinates are never jittered or displaced.
+Use distinct shapes; identical coincident outlines cannot distinguish two
+categories by colour alone. Existing `markers` remains available for explicit
+filled symbols. See [the overlap example](examples/overlapping_markers.rs).
+
 ## Legend placement
 
 Legends first look for clear space **inside the axes**. They avoid plotted data
