@@ -142,7 +142,13 @@ impl FieldView {
         uniform_i(&gl, &p, "normMode", 0);
         uniform_i(&gl, &p, "palette", 0);
         uniform_i(&gl, &p, "momentMode", 0);
-        gl.uniform4f(gl.get_uniform_location(&p, "missingColor").as_ref(), 1., 1., 1., 1.);
+        gl.uniform4f(
+            gl.get_uniform_location(&p, "missingColor").as_ref(),
+            1.,
+            1.,
+            1.,
+            1.,
+        );
         uniform2(&gl, &p, "viewLow", 0.0, 0.0);
         uniform2(&gl, &p, "viewHigh", 1.0, 1.0);
         Ok(Self {
@@ -248,20 +254,47 @@ impl FieldView {
     /// Replace an already-sized field with [SNR dB, velocity, width, reserved]
     /// cells. Existing rectilinear edges and view are preserved. HSV conversion
     /// is performed by the WebGL shader, not by the host language.
-    pub fn set_moment_data(&mut self, values: &[f32], velocity_limit: f32, width_limit: f32) -> Result<(), JsValue> {
-        if self.nx<1 || self.ny<1 || values.len()!=self.nx as usize*self.ny as usize*4 ||
-            !velocity_limit.is_finite() || velocity_limit<=0. || !width_limit.is_finite() || width_limit<=0. {
+    pub fn set_moment_data(
+        &mut self,
+        values: &[f32],
+        velocity_limit: f32,
+        width_limit: f32,
+    ) -> Result<(), JsValue> {
+        if self.nx < 1
+            || self.ny < 1
+            || values.len() != self.nx as usize * self.ny as usize * 4
+            || !velocity_limit.is_finite()
+            || velocity_limit <= 0.
+            || !width_limit.is_finite()
+            || width_limit <= 0.
+        {
             return Err(error("Invalid moment dimensions or HSV limits"));
         }
         self.gl.use_program(Some(&self.p));
         self.gl.active_texture(Gl::TEXTURE0);
-        self.gl.bind_texture(Gl::TEXTURE_2D,Some(&self.t));
-        let array=js_sys::Float32Array::from(values);
-        self.gl.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_array_buffer_view(
-            Gl::TEXTURE_2D,0,Gl::RGBA32F as i32,self.nx,self.ny,0,Gl::RGBA,Gl::FLOAT,Some(&array))?;
-        uniform_i(&self.gl,&self.p,"momentMode",1);
-        uniform2(&self.gl,&self.p,"momentLimits",velocity_limit,width_limit);
-        self.moment_mode=true;
+        self.gl.bind_texture(Gl::TEXTURE_2D, Some(&self.t));
+        let array = js_sys::Float32Array::from(values);
+        self.gl
+            .tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_array_buffer_view(
+                Gl::TEXTURE_2D,
+                0,
+                Gl::RGBA32F as i32,
+                self.nx,
+                self.ny,
+                0,
+                Gl::RGBA,
+                Gl::FLOAT,
+                Some(&array),
+            )?;
+        uniform_i(&self.gl, &self.p, "momentMode", 1);
+        uniform2(
+            &self.gl,
+            &self.p,
+            "momentLimits",
+            velocity_limit,
+            width_limit,
+        );
+        self.moment_mode = true;
         self.draw();
         Ok(())
     }
@@ -316,12 +349,29 @@ impl FieldView {
         Ok(())
     }
     /// Missing observations can be distinguished from values below the scale.
-    pub fn set_missing_color(&self, red: f32, green: f32, blue: f32, alpha: f32) -> Result<(), JsValue> {
-        if ![red, green, blue, alpha].iter().all(|v| v.is_finite() && (0.0..=1.0).contains(v)) {
+    pub fn set_missing_color(
+        &self,
+        red: f32,
+        green: f32,
+        blue: f32,
+        alpha: f32,
+    ) -> Result<(), JsValue> {
+        if ![red, green, blue, alpha]
+            .iter()
+            .all(|v| v.is_finite() && (0.0..=1.0).contains(v))
+        {
             return Err(error("Missing color components must be in [0,1]"));
         }
         self.gl.use_program(Some(&self.p));
-        self.gl.uniform4f(self.gl.get_uniform_location(&self.p, "missingColor").as_ref(), red, green, blue, alpha);
+        self.gl.uniform4f(
+            self.gl
+                .get_uniform_location(&self.p, "missingColor")
+                .as_ref(),
+            red,
+            green,
+            blue,
+            alpha,
+        );
         self.draw();
         Ok(())
     }
