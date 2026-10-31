@@ -39,6 +39,28 @@ The host supplies arrays and scientific metadata, not tick positions or event
 handlers. A missing native frame service fails visibly rather than silently
 falling back to custom labels or an undecorated texture.
 
+## Static-host series navigation
+
+`InteractiveSeriesPlot` uses the shared `PlotControlGroup` and
+`bindPlotNavigation` controller. Its default is **Scroll**: ordinary wheel and
+single-finger touch gestures scroll the page, without capturing the pointer or
+changing the viewport. Select **Zoom** for box zoom / pointer-centered wheel
+zoom, or **Pan** for drag panning (Shift-drag also pans in Zoom mode).
+Visible + / − buttons zoom about the center. **Reset view**, double-click,
+Home or Escape restores the full viewport and returns to Scroll mode.
+Cancellation clears a selection and releases pointer capture.
+
+Several series plots can share one toolbar: create a `PlotControlGroup`, append
+its `element`, and pass it as the `controls` mount option. Modes and toolbar
+actions apply to all registered plots; drag navigation affects the touched
+plot. Controls remain visible even with the legacy `compact` option. Dispose
+unregisters a plot. `setHeight` resizes while preserving the data viewport.
+
+Dense small multiples can request native `compact_axes`, `panel_label` and
+`hide_x_labels` (only on non-bottom panels). Rust still owns axes, ticks, units
+and clipping. The compact renderer supports 150×90 CSS px panels; the labels
+remain in the specification for accessibility. Do not add HTML axes.
+
 ## Three-variable HSV keys
 
 Use native `HsvColorKey` for moment images rather than a scalar palette bar.

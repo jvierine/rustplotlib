@@ -48,3 +48,4 @@ try{
  await writeFile('validation/gallery-web.json',JSON.stringify({passed:true,cards,expectedCards:expectedTitles.length,titles,downloads:hrefs.length,errors},null,2));
  console.log('WebGL2 field, normalization, volume rotation, frame playback, PNG download and mobile layout passed');
 }finally{await browser.close();}
+await import('./test_plot_controls.mjs');

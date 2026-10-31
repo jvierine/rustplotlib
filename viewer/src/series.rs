@@ -44,6 +44,13 @@ struct SeriesSpec {
     field: Option<FieldData>,
     #[serde(default)]
     equal_aspect: bool,
+    /// Dense small multiples: native, reduced margins and typography.
+    #[serde(default)]
+    compact_axes: bool,
+    #[serde(default)]
+    hide_x_labels: bool,
+    #[serde(default)]
+    panel_label: String,
 }
 include!("diagnostic_fields.rs");
 fn nice_ticks(lo: f64, hi: f64, target: usize) -> Vec<f64> {
@@ -238,8 +245,8 @@ impl SeriesView {
                 .chain(spec.bounds.iter())
                 .chain([width, height, dpr].iter())
                 .all(|v| v.is_finite())
-            || width < 260.
-            || height < 150.
+            || width < if spec.compact_axes { 150. } else { 260. }
+            || height < if spec.compact_axes { 90. } else { 150. }
             || dpr <= 0.
             || spec.bounds[2] <= spec.bounds[0]
             || spec.bounds[3] <= spec.bounds[1]
@@ -271,16 +278,26 @@ impl SeriesView {
         c.set_transform(dpr, 0., 0., dpr, 0., 0.)?;
         c.set_fill_style_str("#ffffff");
         c.fill_rect(0., 0., width, height);
-        c.set_font("16px RustplotlibPagella, Palatino, serif");
+        c.set_font(if spec.compact_axes {
+            "11px RustplotlibPagella, Palatino, serif"
+        } else {
+            "16px RustplotlibPagella, Palatino, serif"
+        });
         c.set_text_align("left");
-        let yt = nice_ticks(y0, y1, 5);
+        let yt = nice_ticks(y0, y1, if spec.compact_axes { 3 } else { 5 });
         let yl: Vec<_> = yt.iter().map(|v| number_label(*v, y1 - y0)).collect();
         let tick_width = yl
             .iter()
             .map(|s| c.measure_text(s).map(|m| m.width()).unwrap_or(64.))
             .fold(0_f64, f64::max);
-        let left = (tick_width + 43.).max(if width < 450. { 76. } else { 90. });
-        let right = if spec.field.is_some() {
+        let left = if spec.compact_axes {
+            tick_width + 9.
+        } else {
+            (tick_width + 43.).max(if width < 450. { 76. } else { 90. })
+        };
+        let right = if spec.compact_axes {
+            13.
+        } else if spec.field.is_some() {
             88.
         } else if spec.utc_origin_seconds.is_some() {
             48.
@@ -302,8 +319,18 @@ impl SeriesView {
         let columns =
             (((width - legend_left - legend_right) / entry_width).floor() as usize).max(1);
         let rows = entries.len().div_ceil(columns);
-        let top = 18. + rows as f64 * 23.;
-        self.rect = [left, top, width - left - right, height - top - 63.];
+        let top = if spec.compact_axes { 16. } else { 18. } + rows as f64 * 23.;
+        let bottom_margin = if spec.compact_axes {
+            if spec.hide_x_labels { 6. } else { 33. }
+        } else {
+            63.
+        };
+        self.rect = [
+            left,
+            top,
+            width - left - right,
+            height - top - bottom_margin,
+        ];
         if spec.equal_aspect {
             self.rect = equal_aspect_rect(self.rect, x1 - x0, y1 - y0);
         }
@@ -312,6 +339,11 @@ impl SeriesView {
         let bottom = top + plot_height;
         if self.rect[2] < 70. || self.rect[3] < 35. {
             return Err(JsValue::from_str("Series panel is too small"));
+        }
+        if !spec.panel_label.is_empty() {
+            c.set_text_align("right");
+            c.set_fill_style_str("#172134");
+            c.fill_text(&spec.panel_label, width - right, 11.)?;
         }
         if let Some(field) = &spec.field {
             self.color_limits = field.limits;
@@ -339,7 +371,11 @@ impl SeriesView {
             c.line_to(width - right, py);
             c.stroke();
             c.set_fill_style_str("#172134");
-            c.fill_text(label, left - 9., py + 5.)?;
+            c.fill_text(
+                label,
+                left - if spec.compact_axes { 4. } else { 9. },
+                py + if spec.compact_axes { 3. } else { 5. },
+            )?;
         }
         let target = ((self.rect[2] / 145.).floor() as usize).clamp(3, 7);
         let xt = if spec.categories.is_empty() {
@@ -365,9 +401,9 @@ impl SeriesView {
                 .map(|t| {
                     t.format(if x1 - x0 < 0.04 {
                         "%H:%M:%S"
-                    } else if x1 - x0 >= 24. && width < 500. {
+                    } else if x1 - x0 > 24. && width < 500. {
                         "%m-%d"
-                    } else if x1 - x0 >= 24. {
+                    } else if x1 - x0 > 24. {
                         "%m-%d %H:%M"
                     } else {
                         "%H:%M"
@@ -385,7 +421,13 @@ impl SeriesView {
             c.line_to(px, bottom);
             c.stroke();
             c.set_fill_style_str("#172134");
-            c.fill_text(&label, px, bottom + 22.)?;
+            if !spec.hide_x_labels {
+                c.fill_text(
+                    &label,
+                    px,
+                    bottom + if spec.compact_axes { 12. } else { 22. },
+                )?;
+            }
         }
         c.set_stroke_style_str("#526b7d");
         c.begin_path();
@@ -393,12 +435,20 @@ impl SeriesView {
         c.line_to(left, bottom);
         c.line_to(width - right, bottom);
         c.stroke();
-        c.fill_text(&spec.xlabel, left + self.rect[2] / 2., bottom + 53.)?;
-        c.save();
-        c.translate(17., top + self.rect[3] / 2.)?;
-        c.rotate(-std::f64::consts::FRAC_PI_2)?;
-        c.fill_text(&spec.ylabel, 0., 0.)?;
-        c.restore();
+        if !spec.hide_x_labels {
+            c.fill_text(
+                &spec.xlabel,
+                left + self.rect[2] / 2.,
+                bottom + if spec.compact_axes { 28. } else { 53. },
+            )?;
+        }
+        if !spec.compact_axes {
+            c.save();
+            c.translate(17., top + self.rect[3] / 2.)?;
+            c.rotate(-std::f64::consts::FRAC_PI_2)?;
+            c.fill_text(&spec.ylabel, 0., 0.)?;
+            c.restore();
+        }
         for s in &spec.series {
             self.line_width = s.line_width;
             if let Some(color) = &s.fill {
