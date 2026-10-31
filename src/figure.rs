@@ -1260,7 +1260,8 @@ impl Figure {
         glyphs: &BTreeMap<String, Glyph>,
         serial: &mut usize,
         bounds: &mut Vec<(String, [f64; 4])>,
-    ) -> Result<()> {
+        reserved: &[Rect],
+    ) -> Result<Rect> {
         let row_height = legend
             .entries
             .iter()
@@ -1273,11 +1274,6 @@ impl Figure {
                 glyphs[&e.label].height_pt.max(symbol_height) * MM_PER_PT + 1.5
             })
             .fold(self.font_pt * MM_PER_PT * 1.35, f64::max);
-        let mut text_widths = vec![0.0_f64; legend.columns];
-        for (i, entry) in legend.entries.iter().enumerate() {
-            text_widths[i % legend.columns] =
-                text_widths[i % legend.columns].max(glyphs[&entry.label].width_pt * MM_PER_PT);
-        }
         let symbol_width = legend
             .entries
             .iter()
@@ -1289,16 +1285,24 @@ impl Figure {
             .fold(7., f64::max);
         let text_offset = symbol_width + 3.;
         let column_gap = 4.;
-        let mut offsets = vec![0.];
-        for width in text_widths.iter().take(legend.columns - 1) {
-            offsets.push(offsets.last().unwrap() + text_offset + width + column_gap);
-        }
-        let width = 2. * legend.padding_mm
-            + text_offset * legend.columns as f64
-            + text_widths.iter().sum::<f64>()
-            + column_gap * (legend.columns - 1) as f64;
-        let rows = legend.entries.len().div_ceil(legend.columns);
-        let height = 2. * legend.padding_mm + row_height * rows as f64;
+        let layout = |columns: usize| {
+            let mut text_widths = vec![0.0_f64; columns];
+            for (i, entry) in legend.entries.iter().enumerate() {
+                text_widths[i % columns] =
+                    text_widths[i % columns].max(glyphs[&entry.label].width_pt * MM_PER_PT);
+            }
+            let mut offsets = vec![0.];
+            for width in text_widths.iter().take(columns - 1) {
+                offsets.push(offsets.last().unwrap() + text_offset + width + column_gap);
+            }
+            let width = 2. * legend.padding_mm
+                + text_offset * columns as f64
+                + text_widths.iter().sum::<f64>()
+                + column_gap * (columns - 1) as f64;
+            let height =
+                2. * legend.padding_mm + row_height * legend.entries.len().div_ceil(columns) as f64;
+            (offsets, width, height)
+        };
         let mask = if legend.avoid_data {
             self.legend_occupancy(panel, legend)?
         } else {
@@ -1318,6 +1322,32 @@ impl Figure {
             }
         }
         let occupied = |r: Rect| {
+            if r.x < 0.5
+                || r.y < 0.5
+                || r.x + r.width > self.width_mm - 0.5
+                || r.y + r.height > self.height_mm - 0.5
+            {
+                return true;
+            }
+            let intersects = |other: Rect| {
+                r.x < other.x + other.width + 0.5
+                    && r.x + r.width > other.x - 0.5
+                    && r.y < other.y + other.height + 0.5
+                    && r.y + r.height > other.y - 0.5
+            };
+            if bounds
+                .iter()
+                .any(|(_, b)| intersects(Rect::new(b[0], b[1], b[2] - b[0], b[3] - b[1])))
+                || reserved.iter().any(|&other| intersects(other))
+                || self.colorbars.iter().any(|bar| intersects(bar.rect))
+                || self
+                    .panels
+                    .iter()
+                    .filter(|p| !std::ptr::eq(*p, panel))
+                    .any(|p| intersects(p.rect))
+            {
+                return true;
+            }
             // A half-millimetre clearance also protects antialiased edges.
             let ix = |v: f64| ((v - panel.rect.x) * 4.).floor().clamp(0., w as f64) as usize;
             let iy = |v: f64| ((v - panel.rect.y) * 4.).floor().clamp(0., h as f64) as usize;
@@ -1330,15 +1360,36 @@ impl Figure {
             summed[y1 * (w + 1) + x1] + summed[y0 * (w + 1) + x0]
                 > summed[y0 * (w + 1) + x1] + summed[y1 * (w + 1) + x0]
         };
-        let r = legend.place(panel.rect, width, height, &occupied)?;
+        let mut counts = vec![legend.columns];
+        counts.extend((1..=legend.entries.len()).filter(|&n| n != legend.columns));
+        let mut chosen = None;
+        // Try every usable column count inside before considering any exterior.
+        for outside in [false, true] {
+            for &columns in &counts {
+                let (offsets, width, height) = layout(columns);
+                let r = if outside {
+                    legend.place_outside(panel.rect, width, height, &occupied)
+                } else {
+                    legend.place_inside(panel.rect, width, height, &occupied)
+                };
+                if let Some(r) = r {
+                    chosen = Some((r, columns, offsets));
+                    break;
+                }
+            }
+            if chosen.is_some() {
+                break;
+            }
+        }
+        let (r,columns,offsets)=chosen.ok_or_else(|| anyhow::anyhow!("No legend placement avoids protected content within the figure; shorten the legend or enlarge the figure"))?;
         write!(
             svg,
             "<g data-role=\"legend\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"0.8\" fill=\"white\" fill-opacity=\"{}\"/>",
             r.x, r.y, r.width, r.height, legend.background_opacity
         )?;
         for (i, entry) in legend.entries.iter().enumerate() {
-            let x = r.x + legend.padding_mm + offsets[i % legend.columns];
-            let y = r.y + legend.padding_mm + ((i / legend.columns) as f64 + 0.5) * row_height;
+            let x = r.x + legend.padding_mm + offsets[i % columns];
+            let y = r.y + legend.padding_mm + ((i / columns) as f64 + 0.5) * row_height;
             match &entry.symbol {
                 crate::LegendSymbol::Line {
                     color,
@@ -1383,7 +1434,7 @@ impl Figure {
             )?;
         }
         svg.push_str("</g>");
-        Ok(())
+        Ok(r)
     }
 
     pub(crate) fn legend_occupancy(
@@ -1680,9 +1731,6 @@ impl Figure {
                 }
             }
             s.push_str("</g>");
-            if let Some(legend) = &p.legend {
-                self.render_legend(&mut s, p, legend, &glyphs, &mut serial, &mut label_bounds)?;
-            }
             if let Some(a) = &p.axes
                 && p.axes_visible
             {
@@ -2027,6 +2075,23 @@ impl Figure {
                 &mut serial,
                 &mut label_bounds,
             )?;
+        }
+        // Place legends after all labels so both their keys and their white
+        // backgrounds avoid annotations, secondary axes and adjacent content.
+        let mut reserved_legends = Vec::new();
+        for p in &self.panels {
+            if let Some(legend) = &p.legend {
+                let r = self.render_legend(
+                    &mut s,
+                    p,
+                    legend,
+                    glyphs,
+                    &mut serial,
+                    &mut label_bounds,
+                    &reserved_legends,
+                )?;
+                reserved_legends.push(r);
+            }
         }
         let intersects = |b: [f64; 4], r: Rect| {
             b[2].min(r.x + r.width) - b[0].max(r.x) > 0.05
@@ -2795,7 +2860,7 @@ mod tests {
             .collect();
         let mut svg = String::new();
         let mut bounds = Vec::new();
-        f.render_legend(&mut svg, &p, &legend, &glyphs, &mut 0, &mut bounds)
+        f.render_legend(&mut svg, &p, &legend, &glyphs, &mut 0, &mut bounds, &[])
             .unwrap();
         assert_eq!(bounds.len(), 3);
         assert_eq!(bounds[0].1[1], bounds[1].1[1]);

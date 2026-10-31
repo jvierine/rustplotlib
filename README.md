@@ -55,6 +55,20 @@ Web exports also trim blank outer margins by default and update the embed width
 without enlarging the labels. Use `save_fixed_for_web` when fixed animation
 frames or deliberate whitespace are needed.
 
+## Legend placement
+
+Legends first look for clear space **inside the axes**. They avoid plotted data
+and annotations, and try alternate column counts before moving outside. If the
+axes are full, they look for clear space around the panel without covering axis
+labels, neighboring panels, colorbars or other legends. If nothing fits safely,
+export reports the problem instead of hiding content.
+
+`Legend::new` enables this behavior. `position` and `columns` are preferences;
+`AboveCenter` now prefers the top-center **inside** the axes. Use
+`OutsideAboveCenter` only when an outside legend is explicitly required.
+`avoid_data = false` permits covering data, while label and layout checks remain
+active. `avoid_layers` can select which data layers to protect.
+
 ## Unambiguous marker legends
 
 Point keys support the same shapes as plotted markers:
