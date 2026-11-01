@@ -294,11 +294,18 @@ impl HeatmapView {
     }
     /// CSS plot rectangle. Position the field canvas here; all labels stay in Rust.
     pub fn plot_rect(&self) -> Vec<f64> {
+        let scale = (self.font_size / 18.).max(1.);
         vec![
-            82.,
-            12.,
-            (self.width - 190.).max(1.),
-            (self.height - if self.x_labels_visible { 76. } else { 26. }).max(1.),
+            82. * scale,
+            12. * scale,
+            (self.width - 190. * scale).max(1.),
+            (self.height
+                - if self.x_labels_visible {
+                    76. * scale
+                } else {
+                    26. * scale
+                })
+            .max(1.),
         ]
     }
     pub fn resize(&mut self, width: f64, height: f64, dpr: f64) -> Result<(), JsValue> {

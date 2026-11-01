@@ -18,6 +18,8 @@ pub struct SeriesView {
     key_positions: Vec<[f64; 2]>,
     top: f64,
     color_scale: Option<(f64, f64, String, String)>,
+    text_scale: f64,
+    full_bounds: [f64; 4],
 }
 #[wasm_bindgen]
 impl SeriesView {
@@ -40,7 +42,18 @@ impl SeriesView {
             key_positions: Vec::new(),
             top: 20.,
             color_scale: None,
+            text_scale: 1.,
+            full_bounds: [0., 1., 0., 1.],
         })
+    }
+    /// Axis font size in CSS pixels. Call before begin/begin_map. Typography,
+    /// label padding and hit regions scale together, independently of device DPR.
+    pub fn set_font_size(&mut self, pixels: f64) -> Result<(), JsValue> {
+        if !pixels.is_finite() || !(10. ..=32.).contains(&pixels) {
+            return Err(JsValue::from_str("Font size must be 10–32 pixels"));
+        }
+        self.text_scale = pixels / 18.;
+        Ok(())
     }
     /// CSS dimensions and device pixel ratio are separate, preserving font size.
     pub fn begin(
@@ -66,14 +79,18 @@ impl SeriesView {
         {
             return Err(JsValue::from_str("Invalid plot dimensions or bounds"));
         }
+        self.canvas.set_width((width * dpr).round() as u32);
+        self.canvas.set_height((height * dpr).round() as u32);
+        let width = width / self.text_scale;
+        let height = height / self.text_scale;
+        let dpr = dpr * self.text_scale;
         self.width = width;
         self.height = height;
         self.bounds = [x0, x1, y0, y1];
+        self.full_bounds = self.bounds;
         self.map = false;
         self.time = false;
         self.labels.clear();
-        self.canvas.set_width((width * dpr).round() as u32);
-        self.canvas.set_height((height * dpr).round() as u32);
         let c = &self.ctx;
         c.set_transform(dpr, 0., 0., dpr, 0., 0.)?;
         c.set_font("15px RustplotlibPagella, Palatino, serif");
@@ -151,7 +168,9 @@ impl SeriesView {
     }
     pub fn colorbar_rect(&self) -> Vec<f64> {
         if self.color_scale.is_some() {
-            vec![55., 0., self.width - 75., 56.]
+            [55., 0., self.width - 75., 56.]
+                .map(|v| v * self.text_scale)
+                .to_vec()
         } else {
             vec![0.; 4]
         }
@@ -189,7 +208,7 @@ impl SeriesView {
         self.begin(width, height, dpr, west, east, south, north, "", "")?;
         self.map = true;
         let mut bounds = [west, east, mercator(south), mercator(north)];
-        let ratio = (width - 75.) / (height - self.top - 35.);
+        let ratio = (self.width - 75.) / (self.height - self.top - 35.);
         let dx = bounds[1] - bounds[0];
         let dy = bounds[3] - bounds[2];
         if dx / dy < ratio {
@@ -202,8 +221,37 @@ impl SeriesView {
             bounds[3] += pad;
         }
         self.bounds = bounds;
-        self.ctx.clear_rect(0., 0., width, height);
+        self.full_bounds = bounds;
+        self.ctx.clear_rect(0., 0., self.width, self.height);
         self.draw_axes("Longitude (°E)", "")
+    }
+    /// CSS data rectangle for navigation hit testing at any font size or DPR.
+    pub fn plot_rect(&self) -> Vec<f64> {
+        [
+            55.,
+            self.top,
+            self.width - 75.,
+            self.height - self.top - 35.,
+        ]
+        .map(|v| v * self.text_scale)
+        .to_vec()
+    }
+    /// Normalized viewport of the original data bounds (projected for maps).
+    /// Call after begin and before adding series. Zoom/pan never changes data.
+    pub fn set_view(&mut self, x0: f64, y0: f64, x1: f64, y1: f64) -> Result<(), JsValue> {
+        if ![x0, y0, x1, y1].iter().all(|v| v.is_finite()) || x1 <= x0 || y1 <= y0 {
+            return Err(JsValue::from_str("Invalid series viewport"));
+        }
+        let b = self.full_bounds;
+        self.bounds = [
+            b[0] + (b[1] - b[0]) * x0,
+            b[0] + (b[1] - b[0]) * x1,
+            b[2] + (b[3] - b[2]) * y0,
+            b[2] + (b[3] - b[2]) * y1,
+        ];
+        self.labels.clear();
+        self.ctx.clear_rect(0., 0., self.width, self.height);
+        self.draw_axes("", "")
     }
     /// Paired x,y samples; nonfinite samples break lines. Markers stay in CSS px.
     pub fn series(&self, xy: &[f64], color: &str, line: bool, radius: f64) -> Result<(), JsValue> {
@@ -270,6 +318,14 @@ impl SeriesView {
         c.set_fill_style_str(color);
         c.set_text_align("left");
         let anchor = [self.px(x), self.py(y)];
+        if anchor[0] < 55.
+            || anchor[0] > self.width - 20.
+            || anchor[1] < self.top
+            || anchor[1] > self.height - 35.
+        {
+            c.restore();
+            return Ok(());
+        }
         let width = c.measure_text(text)?.width();
         let mut chosen = [0.; 4];
         let mut best = f64::INFINITY;
