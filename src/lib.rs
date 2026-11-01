@@ -27,6 +27,8 @@ pub use figure::{
 };
 pub use latex::Latex;
 pub use legend::{Legend, LegendEntry, LegendPosition, LegendSymbol};
+pub mod series;
+pub use series::LineStyle;
 mod palettes;
 
 pub mod cartography;

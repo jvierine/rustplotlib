@@ -549,6 +549,7 @@ pub struct Connector {
 }
 #[derive(Clone, Debug)]
 pub struct Panel {
+    pub(crate) next_line_series: usize,
     pub rect: Rect,
     pub axes: Option<Axes>,
     pub axes_visible: bool,
@@ -664,6 +665,7 @@ impl Panel {
     }
     pub fn new(rect: Rect, axes: Axes) -> Self {
         Self {
+            next_line_series: 0,
             rect,
             axes: Some(axes),
             axes_visible: true,

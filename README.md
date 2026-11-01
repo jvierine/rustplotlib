@@ -28,7 +28,7 @@ let panels = figure.grid(1, 1)?;
 figure.panels[panels[0]].axes = Some(Axes::new(
     [0., 10.], [-1., 1.], r"$t\,[\mathrm{s}]$", r"$p'/p_0$",
 ));
-figure.panels[panels[0]].push(Layer::Line(Line::new(points, "#245774")));
+figure.panels[panels[0]].plot(points, "Pressure");
 figure.save_for_article("figure.pdf", "figures/figure.pdf")?;
 ```
 
@@ -54,6 +54,22 @@ demonstrates desktop/mobile selection while retaining the same label size.
 Web exports also trim blank outer margins by default and update the embed width
 without enlarging the labels. Use `save_fixed_for_web` when fixed animation
 frames or deliberate whitespace are needed.
+
+## Distinct default lines
+
+`panel.plot(points, "Label")` cycles through distinct colours **and** solid,
+dashed, dotted and dash-dot patterns, with matching legend keys. The first two
+series are blue/solid and vermilion/dashed. Patterns remain distinguishable in
+grayscale. Each panel has its own six-series cycle; grids and explicitly styled
+reference lines do not advance it.
+
+Use `Line::series(points, index)` to keep a category's style consistent across
+panels, and `line.legend("Label")` to copy its actual style into the legend.
+`Line::new(points, color)` remains the explicit-colour API; existing chosen
+colours are not silently replaced. See the
+[default line styles example](examples/default_line_styles.rs).
+
+![Default lines in colour and grayscale](gallery/default_line_styles.png)
 
 ## Overlapping marker categories
 
