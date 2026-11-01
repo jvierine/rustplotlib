@@ -19,39 +19,10 @@ impl ColorMap {
     /// Copyright 2019 Google LLC, Apache-2.0; Anton Mikhailov / Ruofei Du.
     /// https://gist.github.com/mikhailov-work/0d177465a8151eb6ede1768d51d476c7
     pub fn turbo() -> Self {
-        let coefficients = [
-            [
-                0.13572138,
-                4.61539260,
-                -42.66032258,
-                132.13108234,
-                -152.94239396,
-                59.28637943,
-            ],
-            [
-                0.09140261,
-                2.19418839,
-                4.84296658,
-                -14.18503333,
-                4.27729857,
-                2.82956604,
-            ],
-            [
-                0.10667330,
-                12.64194608,
-                -60.58204836,
-                110.36276771,
-                -89.90310912,
-                27.34824973,
-            ],
-        ];
         Self {
             listed: false,
             stops: (0..1024)
-                .map(|i| {
-                    let x = i as f64 / 1023.;
-                    coefficients.map(|c| c.iter().rev().fold(0_f64, |v, a| v * x + a).clamp(0., 1.))
-                })
+                .map(|i| crate::palettes::turbo(i as f64 / 1023.))
                 .collect(),
         }
     }

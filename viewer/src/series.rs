@@ -137,7 +137,7 @@ impl SeriesView {
         palette: &str,
         label: &str,
     ) -> Result<(), JsValue> {
-        if !valid_scale(low, high) || !matches!(palette, "viridis" | "plasma") {
+        if !valid_scale(low, high) || !matches!(palette, "viridis" | "plasma" | "turbo") {
             return Err(JsValue::from_str("Invalid color scale or palette"));
         }
         self.color_scale = Some((low, high, palette.into(), label.into()));
@@ -484,7 +484,9 @@ fn valid_scale(low: f64, high: f64) -> bool {
 }
 fn scale_color(low: f64, high: f64, palette: &str, value: f64) -> String {
     let index = (((value - low) / (high - low)).clamp(0., 1.) * 255.).round() as usize;
-    let rgb = if palette == "plasma" {
+    let rgb = if palette == "turbo" {
+        palettes::turbo((value - low) / (high - low))
+    } else if palette == "plasma" {
         palettes::PLASMA[index]
     } else {
         palettes::VIRIDIS[index]
