@@ -2270,6 +2270,19 @@ impl Figure {
     #[cfg(feature = "export")]
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
+        // ArticleLayout keeps an untrimmed design canvas for typography checks,
+        // but ordinary exports should not silently retain its empty margins.
+        // PDF export also writes the physical-size LaTeX inclusion contract.
+        if self.article_contract.is_some() {
+            if path.extension().and_then(|s| s.to_str()) == Some("pdf") {
+                return self.save_for_article(path, &path.to_string_lossy());
+            }
+            let mut export = self.clone();
+            export.article_contract = None;
+            export.tight_export = true;
+            self.article_contract.unwrap().validate(self)?;
+            return export.save(path);
+        }
         let raw_svg = self.svg()?;
         let svg = if self.tight_export {
             self.tight_svg(&raw_svg)?

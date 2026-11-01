@@ -42,7 +42,11 @@ labels. Paste the snippet into the figure environment (or input it) without
 cannot be detected by the Rust library. Article exports trim blank outer margins
 by default and include the cropped PDF at its exact physical size, preserving
 body-sized labels. `save_fixed_for_article` explicitly retains the full design
-canvas. Width overrides and font overrides remain rejected. Generic `IntendedUse`
+canvas. Ordinary `figure.save("figure.pdf")` now uses the same trimmed article
+export and writes `figure.include.tex`; use that inclusion instead of stretching
+the cropped PDF to `\textwidth`. Direct PNG and SVG saves use the same bounds.
+Use `save_for_article` when the PDF path inside the manuscript differs from the
+output path. Width overrides and font overrides remain rejected. Generic `IntendedUse`
 presets remain available for unbound plots and non-publication output.
 
 For web pages, use `WebLayout::new(container_css_px, body_font_css_px)` and

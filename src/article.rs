@@ -68,7 +68,8 @@ impl ArticleLayout {
     }
 
     /// Design at final physical size. A narrower fraction changes the canvas,
-    /// never the font size. Height is also the final height in millimetres.
+    /// never the font size. Ordinary `save` trims exports; a PDF also gets a
+    /// physical-size `.include.tex`. Use `save_fixed_for_article` for a full canvas.
     pub fn figure(self, width_fraction: f64, height_mm: f64) -> Result<Figure> {
         ensure!(
             width_fraction.is_finite() && width_fraction > 0. && width_fraction <= 1.,
@@ -214,7 +215,10 @@ impl Figure {
             "Article export requires PDF"
         );
         let inclusion = self.latex_include(pdf_path_in_article)?;
-        self.save(path)?;
+        let mut export = self.clone();
+        export.article_contract = None;
+        export.tight_export = false;
+        export.save(path)?;
         std::fs::write(path.with_extension("include.tex"), inclusion)?;
         Ok(())
     }
@@ -223,6 +227,60 @@ impl Figure {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "export")]
+    #[test]
+    fn ordinary_article_save_trims_all_formats_and_fixed_export_remains_fixed() {
+        let mut f = ArticleLayout::new(177., 10.)
+            .unwrap()
+            .figure(1., 120.)
+            .unwrap();
+        let mut p = crate::Panel::new(
+            crate::Rect::new(30., 25., 100., 45.),
+            crate::Axes::new([0., 1.], [0., 1.], "", ""),
+        );
+        p.axes_visible = false;
+        p.push(crate::Layer::Line(crate::Line::new(
+            vec![[0., 0.], [1., 1.]],
+            "black",
+        )));
+        f.panels.push(p);
+        let dir = std::env::temp_dir().join(format!(
+            "rustplotlib-default-article-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pdf = dir.join("plot.pdf");
+        f.save(&pdf).unwrap();
+        let inclusion = std::fs::read_to_string(dir.join("plot.include.tex")).unwrap();
+        let svg = std::fs::read_to_string(dir.join("plot.svg")).unwrap();
+        let tree = resvg::usvg::Tree::from_str(&svg, &resvg::usvg::Options::default()).unwrap();
+        let width_mm = tree.size().width() as f64 * 25.4 / 96.;
+        assert!(width_mm > 100. && width_mm < 104.);
+        assert!(inclusion.contains(&format!("width={width_mm:.6}mm")));
+        let png = image::open(dir.join("plot.png")).unwrap();
+        f.save(dir.join("direct.png")).unwrap();
+        f.save(dir.join("direct.svg")).unwrap();
+        assert_eq!(
+            png.to_rgba8(),
+            image::open(dir.join("direct.png")).unwrap().to_rgba8()
+        );
+        assert_eq!(
+            svg,
+            std::fs::read_to_string(dir.join("direct.svg")).unwrap()
+        );
+        f.save_fixed_for_article(dir.join("fixed.pdf"), "fixed.pdf")
+            .unwrap();
+        assert!(
+            std::fs::read_to_string(dir.join("fixed.include.tex"))
+                .unwrap()
+                .contains("width=177.000000mm")
+        );
+        assert!(!dir.join("fixed.png").exists());
+        assert!(inclusion.contains("body/label font 10.000000"));
+        assert_eq!(f.width_mm, 177.);
+        assert!(!f.tight_export);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[cfg(feature = "export")]
     #[test]
     fn trimmed_article_export_never_rescales_typography() {
