@@ -235,11 +235,15 @@ impl HeatmapView {
         self.high = high;
         self.draw()
     }
-    /// Perceptually uniform scientific palette, shared by texture and colorbar.
+    /// Scientific palette, shared by texture and colorbar.
     pub fn set_palette(&mut self, name: &str) -> Result<(), JsValue> {
         self.colors = if name == "plasma" {
             (0..32)
                 .flat_map(|i| palettes::PLASMA[i * 255 / 31].map(|v| v as f32))
+                .collect()
+        } else if name == "turbo" {
+            (0..32)
+                .flat_map(|i| palettes::turbo(i as f64 / 31.).map(|v| v as f32))
                 .collect()
         } else if name == "rainbow" {
             (0..32)
@@ -259,7 +263,7 @@ impl HeatmapView {
         } else if name == "greys" || name == "gray" {
             vec![1., 1., 1., 0., 0., 0.]
         } else {
-            return Err(error("Palette must be plasma, greys, rainbow, or viridis"));
+            return Err(error("Palette must be plasma, greys, rainbow, turbo, or viridis"));
         };
         self.field.set_colormap(&self.colors)?;
         self.draw()
