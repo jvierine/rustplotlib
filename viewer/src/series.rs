@@ -236,6 +236,27 @@ impl SeriesView {
         .map(|v| v * self.text_scale)
         .to_vec()
     }
+    /// Project paired data coordinates into canvas CSS pixels for pointer hit
+    /// testing. Uses the same map projection, viewport and font scaling as
+    /// series(), independent of device pixel ratio. Nonfinite pairs stay NaN.
+    pub fn project_points(&self, xy: &[f64]) -> Result<Vec<f64>, JsValue> {
+        if xy.len() % 2 != 0 {
+            return Err(JsValue::from_str("Expected paired coordinates"));
+        }
+        Ok(xy
+            .chunks_exact(2)
+            .flat_map(|p| {
+                if p.iter().all(|v| v.is_finite()) {
+                    [
+                        self.px(p[0]) * self.text_scale,
+                        self.py(p[1]) * self.text_scale,
+                    ]
+                } else {
+                    [f64::NAN; 2]
+                }
+            })
+            .collect())
+    }
     /// Normalized viewport of the original data bounds (projected for maps).
     /// Call after begin and before adding series. Zoom/pan never changes data.
     pub fn set_view(&mut self, x0: f64, y0: f64, x1: f64, y1: f64) -> Result<(), JsValue> {
