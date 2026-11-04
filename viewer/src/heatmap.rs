@@ -610,7 +610,9 @@ fn ticks(a: f64, b: f64, n: usize, time: bool) -> Vec<(f64, String)> {
             } else {
                 v.rem_euclid(86400.) as u64
             };
-            if step < 60. {
+            if b-a > 86400. {
+                chrono::DateTime::from_timestamp(v as i64,0).map(|t|t.format("%d %b %H:%M").to_string()).unwrap_or_default()
+            } else if step < 60. {
                 format!("{:02}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
             } else {
                 format!("{:02}:{:02}", s / 3600, s / 60 % 60)
@@ -662,6 +664,13 @@ mod tests {
             .map(|(_, s)| s)
             .collect();
         assert_eq!(labels, vec!["00:00", "12:00", "24:00"]);
+    }
+    #[test]
+    fn multi_day_ticks_identify_dates_without_duplicating_axis_labels() {
+        let labels=ticks(1792627200.,1792627200.+172800.,4,true);
+        assert_eq!(labels[0].1,"22 Oct 00:00");
+        assert_eq!(labels.last().unwrap().1,"24 Oct 00:00");
+        assert_eq!(labels.len(),5);
     }
     #[test]
     fn support_fills_cadence_but_preserves_outages_and_raw_values() {
