@@ -1,5 +1,5 @@
 //! Lightweight scientific line/scatter panels for live browser diagnostics.
-use wasm_bindgen::{JsCast, prelude::*};
+use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 #[path = "../../src/palettes.rs"]
 #[allow(dead_code)]
@@ -20,6 +20,7 @@ pub struct SeriesView {
     color_scale: Option<(f64, f64, String, String)>,
     text_scale: f64,
     full_bounds: [f64; 4],
+    numeric_labels: Option<(String, String)>,
 }
 #[wasm_bindgen]
 impl SeriesView {
@@ -44,6 +45,7 @@ impl SeriesView {
             color_scale: None,
             text_scale: 1.,
             full_bounds: [0., 1., 0., 1.],
+            numeric_labels: None,
         })
     }
     /// Axis font size in CSS pixels. Call before begin/begin_map. Typography,
@@ -54,6 +56,11 @@ impl SeriesView {
         }
         self.text_scale = pixels / 18.;
         Ok(())
+    }
+    /// Physical numeric axes for ordinary line/scatter plots. Call before begin.
+    /// Existing map/time diagnostics retain their original layout by default.
+    pub fn set_numeric_labels(&mut self, xlabel: String, ylabel: String) {
+        self.numeric_labels = Some((xlabel, ylabel));
     }
     /// CSS dimensions and device pixel ratio are separate, preserving font size.
     pub fn begin(
@@ -228,10 +235,10 @@ impl SeriesView {
     /// CSS data rectangle for navigation hit testing at any font size or DPR.
     pub fn plot_rect(&self) -> Vec<f64> {
         [
-            55.,
+            self.left(),
             self.top,
-            self.width - 75.,
-            self.height - self.top - 35.,
+            self.width - self.left() - 20.,
+            self.height - self.top - self.bottom(),
         ]
         .map(|v| v * self.text_scale)
         .to_vec()
@@ -283,10 +290,10 @@ impl SeriesView {
         c.save();
         c.begin_path();
         c.rect(
-            55.,
+            self.left(),
             self.top,
-            self.width - 75.,
-            self.height - self.top - 35.,
+            self.width - self.left() - 20.,
+            self.height - self.top - self.bottom(),
         );
         c.clip();
         c.set_stroke_style_str(color);
@@ -392,6 +399,20 @@ impl SeriesView {
     }
 }
 impl SeriesView {
+    fn left(&self) -> f64 {
+        if self.numeric_labels.is_some() {
+            80.
+        } else {
+            55.
+        }
+    }
+    fn bottom(&self) -> f64 {
+        if self.numeric_labels.is_some() {
+            55.
+        } else {
+            35.
+        }
+    }
     fn draw_axes(&self, left: &str, right: &str) -> Result<(), JsValue> {
         let c = &self.ctx;
         c.set_font("15px RustplotlibPagella, Palatino, serif");
@@ -436,13 +457,15 @@ impl SeriesView {
         c.set_text_align("right");
         for j in 0..5 {
             let v = self.bounds[2] + (self.bounds[3] - self.bounds[2]) * j as f64 / 4.;
-            let py = self.height - 35. - (self.height - self.top - 35.) * j as f64 / 4.;
+            let py = self.height
+                - self.bottom()
+                - (self.height - self.top - self.bottom()) * j as f64 / 4.;
             c.begin_path();
-            c.move_to(55., py);
+            c.move_to(self.left(), py);
             c.line_to(self.width - 20., py);
             c.stroke();
             let value = if self.map { inverse_mercator(v) } else { v };
-            c.fill_text(&format!("{value:.1}"), 48., py + 5.)?;
+            c.fill_text(&format!("{value:.1}"), self.left() - 7., py + 5.)?;
         }
         if self.map || self.time {
             let count = if self.width < 550. { 2 } else { 4 };
@@ -476,6 +499,28 @@ impl SeriesView {
                 };
                 c.fill_text(&label, px, self.height - 12.)?;
             }
+        } else if let Some((xlabel, ylabel)) = &self.numeric_labels {
+            for (x, label) in crate::heatmap::ticks(self.bounds[0], self.bounds[1], 5, false) {
+                let px = self.px(x);
+                c.begin_path();
+                c.move_to(px, self.top);
+                c.line_to(px, self.height - self.bottom());
+                c.stroke();
+                c.set_text_align("center");
+                c.fill_text(&label, px, self.height - self.bottom() + 22.)?;
+            }
+            c.set_text_align("center");
+            c.fill_text(
+                xlabel,
+                (self.left() + self.width - 20.) / 2.,
+                self.height - 5.,
+            )?;
+            c.save();
+            c.translate(19., (self.top + self.height - self.bottom()) / 2.)?;
+            c.rotate(-std::f64::consts::FRAC_PI_2)?;
+            let result = c.fill_text(ylabel, 0., 0.);
+            c.restore();
+            result?;
         } else {
             c.set_text_align("left");
             c.fill_text(left, 55., self.height - 8.)?;
@@ -486,7 +531,9 @@ impl SeriesView {
         Ok(())
     }
     fn px(&self, x: f64) -> f64 {
-        55. + (x - self.bounds[0]) / (self.bounds[1] - self.bounds[0]) * (self.width - 75.)
+        self.left()
+            + (x - self.bounds[0]) / (self.bounds[1] - self.bounds[0])
+                * (self.width - self.left() - 20.)
     }
     fn py(&self, y: f64) -> f64 {
         let y = if self.map {
@@ -495,9 +542,9 @@ impl SeriesView {
             y
         };
         self.height
-            - 35.
+            - self.bottom()
             - (y - self.bounds[2]) / (self.bounds[3] - self.bounds[2])
-                * (self.height - self.top - 35.)
+                * (self.height - self.top - self.bottom())
     }
 }
 fn valid_scale(low: f64, high: f64) -> bool {

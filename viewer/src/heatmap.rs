@@ -1,9 +1,9 @@
 //! Scientific raster panels: the library owns axes, colorbar, and GPU rendering.
-use crate::{FieldView, error};
+use crate::{error, FieldView};
 #[path = "../../src/palettes.rs"]
 #[allow(dead_code)]
 mod palettes;
-use wasm_bindgen::{JsCast, prelude::*};
+use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 #[wasm_bindgen]
 pub struct HeatmapView {
@@ -585,7 +585,7 @@ fn expand_columns(
     }
     Some(display)
 }
-fn ticks(a: f64, b: f64, n: usize, time: bool) -> Vec<(f64, String)> {
+pub(crate) fn ticks(a: f64, b: f64, n: usize, time: bool) -> Vec<(f64, String)> {
     let desired = (b - a) / n as f64;
     let step = if time {
         [
@@ -661,11 +661,9 @@ mod tests {
     }
     #[test]
     fn utc_ticks() {
-        assert!(
-            ticks(1792612800., 1792612860., 4, true)
-                .iter()
-                .all(|(_, s)| s.contains(':'))
-        )
+        assert!(ticks(1792612800., 1792612860., 4, true)
+            .iter()
+            .all(|(_, s)| s.contains(':')))
     }
     #[test]
     fn narrow_full_day_keeps_a_midday_tick() {
