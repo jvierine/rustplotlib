@@ -615,10 +615,10 @@ pub(crate) fn ticks(a: f64, b: f64, n: usize, time: bool) -> Vec<(f64, String)> 
             if b - a > 86400. {
                 chrono::DateTime::from_timestamp(v as i64, 0)
                     .map(|t| {
-                        t.format(if step >= 86400. {
+                        t.format(if step >= 86400. || v.rem_euclid(86400.).abs() < 0.1 {
                             "%d %b"
                         } else {
-                            "%d %b %H:%M"
+                            "%H:%M"
                         })
                         .to_string()
                     })
@@ -677,8 +677,10 @@ mod tests {
     #[test]
     fn multi_day_ticks_identify_dates_without_duplicating_axis_labels() {
         let labels = ticks(1792627200., 1792627200. + 172800., 4, true);
-        assert_eq!(labels[0].1, "22 Oct 00:00");
-        assert_eq!(labels.last().unwrap().1, "24 Oct 00:00");
+        assert_eq!(labels[0].1, "22 Oct");
+        assert_eq!(labels[1].1, "12:00");
+        assert_eq!(labels[2].1, "23 Oct");
+        assert_eq!(labels.last().unwrap().1, "24 Oct");
         assert_eq!(labels.len(), 5);
         assert_eq!(
             ticks(1792627200., 1792627200. + 172800., 2, true)[0].1,
