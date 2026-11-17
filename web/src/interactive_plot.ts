@@ -1,8 +1,8 @@
 /** Public interactive field API. Native Rust owns all scientific decorations.
  * Raw FieldView is a texture primitive, not a complete plotting API.
  */
-import init,{FieldView,PlotViewport} from '../pkg/rustplotlib_web.js';
-export type FieldSpec={bounds:[number,number,number,number];xlabel:string;ylabel:string;colorbar_label:string;panels:string[];utc_origin_seconds?:number|null};
+import init,{FieldView,PlotViewport,interactive_field_frame} from '../pkg/rustplotlib_web.js';
+export type FieldSpec={bounds:[number,number,number,number];xlabel:string;ylabel:string;colorbar_label:string;panels:string[];utc_origin_seconds?:number|null;equal_aspect?:boolean;color_stops?:number[][]};
 type Frame={svg:string;width:number;height:number;panels:number[][];panel_labels:string[];color_stops?:number[];color_regions?:number[][]};
 type Selection={panel:number;x:number;y:number};
 type Options={id:string;spec:FieldSpec;frameEndpoint?:string;frameParameters?:Record<string,number>;colorLimits?:[number,number];onSelect?:(point:Selection)=>void};
@@ -46,8 +46,8 @@ export class InteractiveFieldPlot{
   this.selectionBox.style.cssText='display:none;position:absolute;z-index:3;border:1px dashed #1d5577;background:#3e97bc22;pointer-events:none';this.stage.append(this.selectionBox);
   this.observer=new ResizeObserver(()=>this.queueFrame());
  }
- static async mount(root:HTMLElement,options:Options){initialization??=init();await initialization;
-  const plot=new InteractiveFieldPlot(root,options);await plot.requestFrame();plot.observer.observe(root);return plot;}
+ static async mount(root:HTMLElement,options:Options){initialization??=init().catch(e=>{initialization=undefined;throw e;});await initialization;
+  const plot=new InteractiveFieldPlot(root,options);try{await plot.requestFrame();plot.observer.observe(root);return plot;}catch(e){plot.dispose();throw e;}}
  setColorLimits(low:number,high:number){if(!Number.isFinite(low)||!Number.isFinite(high)||high<=low)throw Error('Invalid color limits');
   if(this.limits[0]===low&&this.limits[1]===high)return;this.limits=[low,high];this.panels.forEach(p=>{p.field.set_scale(low,high,0,.1,2);if(this.frame?.color_stops)p.field.set_colormap(Float32Array.from(this.frame.color_stops));});this.queueFrame();}
  getColorLimits():[number,number]{return [...this.limits];}
@@ -89,10 +89,16 @@ export class InteractiveFieldPlot{
  private async requestFrame(){
   const request=++this.revision;this.abort?.abort();this.abort=new AbortController();
   const width=Math.max(360,Math.min(1200,Math.round(this.root.clientWidth)));
-  const endpoint=this.options.frameEndpoint||new URL('./api/frame',location.href).href;
-  const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},signal:this.abort.signal,
-   body:JSON.stringify({...this.options.frameParameters,...(this.momentLimits?{velocity_limit:this.momentLimits[0],width_limit:this.momentLimits[1]}:{}),hsv:this.momentMode?1:0,id:this.options.id,width,viewport:Array.from(this.viewport.bounds()),color_limits:this.limits})});
-  if(!response.ok)throw Error(`Native plot frame failed (${response.status})`);const frame:Frame=await response.json();
+  const parameters={...this.options.frameParameters,...(this.momentLimits?{velocity_limit:this.momentLimits[0],width_limit:this.momentLimits[1]}:{})};
+  let frame:Frame;
+  if(this.options.frameEndpoint){
+   const response=await fetch(this.options.frameEndpoint,{method:'POST',headers:{'Content-Type':'application/json'},signal:this.abort.signal,
+    body:JSON.stringify({...parameters,hsv:this.momentMode?1:0,id:this.options.id,width,viewport:Array.from(this.viewport.bounds()),color_limits:this.limits})});
+   if(!response.ok)throw Error(`Native plot frame failed (${response.status})`);frame=await response.json();
+  }else{
+   const spec={...this.options.spec,...this.momentMode?{hsv_key:{velocity_limit:parameters.velocity_limit||30,width_limit:parameters.width_limit||10}}:{}};
+   frame=JSON.parse(interactive_field_frame(JSON.stringify(spec),JSON.stringify({width,viewport:Array.from(this.viewport.bounds()),color_limits:this.limits})));
+  }
   if(request!==this.revision)return;
   this.frame=frame;this.stage.style.width=frame.width+'px';this.stage.style.height=frame.height+'px';
   if(this.frameURL)URL.revokeObjectURL(this.frameURL);this.frameURL=svgURL(frame.svg);this.axes.src=this.frameURL;

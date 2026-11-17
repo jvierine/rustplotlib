@@ -41,3 +41,10 @@ The browser computes and renders these display operations in Rust/WASM. No
 server image rendering, radar signal processing, or page-specific axis labels
 are needed. A map's density color is counts per equal-area HEALPix cell, not
 flux or a selection-corrected radiant distribution.
+
+Interactive fields now generate their complete axis frame in Rust/WASM by
+default through `interactive_field_frame(spec_json, request_json)`. The result
+contains SVG axes, normalized panel rectangles, matching palette stops and
+scalar/HSV colorbar hit regions. No server process or TeX runtime is required.
+The wrapper's explicit `frameEndpoint` option retains the native-server mode
+for applications which need it. Failed initial mounts dispose their resources.

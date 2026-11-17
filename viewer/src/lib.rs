@@ -3,6 +3,8 @@ pub use viewport::PlotViewport;
 
 mod series;
 pub use series::SeriesView;
+mod field_frame;
+pub use field_frame::interactive_field_frame;
 // Browser GPU rendering; JavaScript only boots WASM and connects controls.
 use wasm_bindgen::prelude::*;
 use web_sys::{
