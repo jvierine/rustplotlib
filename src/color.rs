@@ -95,6 +95,13 @@ impl ColorMap {
             stops: crate::palettes::INFERNO.to_vec(),
         }
     }
+    /// Standard Matplotlib nipy_spectral lookup table.
+    pub fn nipy_spectral() -> Self {
+        Self {
+            listed: true,
+            stops: crate::palettes::NIPY_SPECTRAL.to_vec(),
+        }
+    }
     pub fn new(stops: Vec<[f64; 3]>) -> Result<Self> {
         ensure!(
             stops.len() >= 2
@@ -243,6 +250,15 @@ impl Scale {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn nipy_spectral_matches_standard_lookup_entries() {
+        let map = ColorMap::nipy_spectral();
+        assert!(map.listed);
+        assert_eq!(map.stops.len(), 256);
+        assert_eq!(map.stops[0], [0., 0., 0.]);
+        assert_eq!(map.stops[255], [0.8, 0.8, 0.8]);
+        assert!((map.stops[128][1] - 0.7385313725490196).abs() < 1e-14);
+    }
     #[test]
     fn plasma_preserves_standard_lookup_table() {
         let map = ColorMap::plasma();
