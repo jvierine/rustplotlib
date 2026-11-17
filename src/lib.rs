@@ -38,3 +38,8 @@ pub mod surface;
 pub use surface::Surface;
 pub mod perspective;
 pub use perspective::PerspectiveCamera;
+
+#[cfg(feature = "export")]
+pub mod animation;
+#[cfg(feature = "export")]
+pub use animation::{AnimationOptions, AnimationWriter};

@@ -254,3 +254,26 @@ after updating the data or camera. It rejects intersections with lines,
 meshes, projected surfaces, and other supplied annotations, including rotated
 text and opaque backgrounds. Check intermediate frames as well as endpoints;
 no placement algorithm can certify a moving scene from a single frame.
+
+## Streaming MP4 animation
+
+`AnimationWriter` renders fixed-canvas figures directly into an FFmpeg input
+pipe. It holds one raster at a time and writes no PNG sequence. Install FFmpeg
+with libx264; `AnimationOptions::ffmpeg` can select its executable. Call `push`
+for each scientific frame and `finish` to check encoder success. Input fps sets
+playback speed; output fps sets video cadence (frames repeat/drop when different).
+The canvas is letterboxed if needed, without stretching or automatic trimming.
+
+```rust
+use rustplotlib::{AnimationOptions, AnimationWriter};
+// `figure` is an existing rustplotlib::Figure.
+let mut movie = AnimationWriter::new("movie.mp4", AnimationOptions {
+    input_fps: 8.0, output_fps: 24.0, ..Default::default()
+})?;
+movie.push(&figure)?;
+movie.finish()?;
+```
+
+Run `cargo run --release --example streaming_animation -- movie.mp4` for a
+self-contained example. This uses an encoder process, not an FFmpeg shared-library
+binding; no FFmpeg headers or ABI-specific development libraries are needed.
