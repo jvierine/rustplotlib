@@ -401,6 +401,8 @@ impl SeriesView {
                 .map(|t| {
                     t.format(if x1 - x0 < 0.04 {
                         "%H:%M:%S"
+                    } else if x1 - x0 > 24. * 31. {
+                        "%Y-%m-%d"
                     } else if x1 - x0 > 24. && width < 500. {
                         "%m-%d"
                     } else if x1 - x0 > 24. {
