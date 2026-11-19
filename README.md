@@ -160,6 +160,11 @@ Click a figure to open its PDF, animation, or interactive view.
 | [PDF](gallery/syisr_khi_density.pdf) · [Source](examples/syisr_khi.rs) | [PDF](gallery/syisr_khi_ion_up.pdf) · [Source](examples/syisr_khi.rs) |
 
 The KHI cases are simulated demonstrations, not observational fits.
+[![Built-in colormaps](gallery/colormaps.png)](gallery/colormaps.pdf)
+
+Use `ColorMap::storm()` for the dark-purple-to-crimson TEC palette.
+[Compare the built-in colormaps](https://jvierine.github.io/rustplotlib/gallery/index.html).
+
 [Browse all examples](gallery/README.md).
 
 `ArticleColumn`, `ArticleWide`, `Mobile`, `DesktopHalf`, or custom dimensions.

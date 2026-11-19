@@ -3,6 +3,16 @@
 Generate the additional examples with `cargo run --release --example gallery`.
 Native figures are exported at 300 dpi and their intended physical size. HEIMDALL uses measured VTEC; the atmospheric cutaways use analytic fields.
 
+## Built-in colormaps
+
+All built-in palettes on the same normalized scale, from low to high values.
+Storm matches the supplied TEC colorbar: dark purple, blue, teal, green, yellow,
+orange and crimson. It is a multihue palette, not a neutral-centred diverging map.
+
+![Built-in colormaps](colormaps.png)
+
+[PDF](colormaps.pdf) · [PNG](colormaps.png) · [SVG](colormaps.svg) · [Source](../examples/colormaps.rs)
+
 ## Field primitives
 
 pcolormesh, contourf, contour and independent color scales.

@@ -26,6 +26,7 @@ jobs:
         run: cargo test --workspace
       - run: cargo run --release --example publication
       - run: cargo run --release --example gallery
+      - run: cargo run --release --example colormaps
       - run: cargo run --release --example secondary_axis
       - run: cargo run --release --example ams_math
       - run: cargo run --release --features hdf5-examples --example syisr_khi

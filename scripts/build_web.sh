@@ -10,6 +10,7 @@ cp web/pkg/rustplotlib_web_bg.wasm web/dist/
 cargo run --release --example web_data
 cargo run --release --example surfaces
 cargo run --release --example gallery
+cargo run --release --example colormaps
 mkdir -p web/gallery
 cp -R gallery/* web/gallery/
 cargo run --release --example atmosphere

@@ -102,6 +102,15 @@ impl ColorMap {
             stops: crate::palettes::NIPY_SPECTRAL.to_vec(),
         }
     }
+    /// Dark purple through blue, teal, green, yellow and orange to crimson.
+    /// Reconstructed from a supplied TEC colorbar; this is a multihue palette,
+    /// not a perceptually uniform or neutral-centred diverging scale.
+    pub fn storm() -> Self {
+        Self {
+            listed: true,
+            stops: crate::palettes::STORM.to_vec(),
+        }
+    }
     pub fn new(stops: Vec<[f64; 3]>) -> Result<Self> {
         ensure!(
             stops.len() >= 2
@@ -250,6 +259,19 @@ impl Scale {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn storm_preserves_reference_colors_and_clamps_endpoints() {
+        let map = ColorMap::storm();
+        assert_eq!(map.stops.len(), 256);
+        assert!(map.listed);
+        assert_eq!(map.sample(0.), [23, 13, 40]);
+        assert_eq!(map.sample(1.), [144, 26, 81]);
+        assert_eq!(map.sample(-1.), map.sample(0.));
+        assert_eq!(map.sample(2.), map.sample(1.));
+        let scale = Scale::new([-80., 80.], Normalization::Linear, map).unwrap();
+        assert_eq!(scale.map(0.).unwrap()[..3], [171, 194, 98]);
+        assert!(scale.map(f64::NAN).is_none());
+    }
     #[test]
     fn nipy_spectral_matches_standard_lookup_entries() {
         let map = ColorMap::nipy_spectral();
