@@ -111,6 +111,49 @@ impl ColorMap {
             stops: crate::palettes::STORM.to_vec(),
         }
     }
+    /// High-contrast multihue ramp: purple, red, yellow, blue, green, then gray.
+    /// Peepomap 0.2.2 Storm control points (MIT), exposed as psycho to distinguish
+    /// it from this library's Storm palette. See third_party/peepomap-LICENSE.txt.
+    /// Not perceptually uniform; repeated lightness bands can emphasize structure.
+    pub fn psycho() -> Self {
+        Self {
+            listed: false,
+            stops: vec![
+                [0.2, 0.2, 0.7],
+                [0.4, 0.3, 0.9],
+                [0.5, 0.5, 1.0],
+                [0.7, 0.6, 1.0],
+                [0.8, 0.8, 1.0],
+                [1.0, 0.9, 0.9],
+                [1.0, 0.6, 0.6],
+                [0.9, 0.4, 0.4],
+                [0.8, 0.2, 0.2],
+                [0.6, 0.0, 0.0],
+                [0.9, 0.1, 0.0],
+                [1.0, 0.2, 0.0],
+                [1.0, 0.4, 0.0],
+                [1.0, 0.6, 0.0],
+                [1.0, 0.8, 0.2],
+                [1.0, 0.9, 0.5],
+                [1.0, 1.0, 0.7],
+                [0.9, 1.0, 1.0],
+                [0.6, 0.8, 1.0],
+                [0.3, 0.6, 1.0],
+                [0.2, 0.5, 0.9],
+                [0.1, 0.4, 0.8],
+                [0.0, 0.3, 0.7],
+                [0.0, 0.5, 0.0],
+                [0.1, 0.7, 0.1],
+                [0.3, 0.9, 0.3],
+                [0.6, 1.0, 0.5],
+                [0.8, 1.0, 0.7],
+                [0.4, 0.4, 0.4],
+                [0.6, 0.6, 0.6],
+                [0.7, 0.7, 0.7],
+                [0.9, 0.9, 0.9],
+            ],
+        }
+    }
     pub fn new(stops: Vec<[f64; 3]>) -> Result<Self> {
         ensure!(
             stops.len() >= 2
@@ -259,6 +302,30 @@ impl Scale {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn psycho_preserves_control_points_interpolation_and_roundtrip() {
+        let map = ColorMap::psycho();
+        assert_eq!(map.stops.len(), 32);
+        assert!(!map.listed);
+        assert_eq!(map.sample(0.), [51, 51, 179]);
+        assert_eq!(map.sample(1.), [230, 230, 230]);
+        assert_eq!(map.sample(-1.), map.sample(0.));
+        assert_eq!(map.sample(2.), map.sample(1.));
+        for (i, rgb) in map.stops.iter().enumerate() {
+            assert_eq!(
+                map.sample(i as f64 / 31.),
+                rgb.map(|c| (c * 255.).round() as u8)
+            );
+        }
+        let decoded: ColorMap =
+            serde_json::from_str(&serde_json::to_string(&map).unwrap()).unwrap();
+        for i in 0..=1000 {
+            assert_eq!(
+                decoded.sample(i as f64 / 1000.),
+                map.sample(i as f64 / 1000.)
+            );
+        }
+    }
     #[test]
     fn storm_preserves_reference_colors_and_clamps_endpoints() {
         let map = ColorMap::storm();

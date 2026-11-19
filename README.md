@@ -163,6 +163,7 @@ The KHI cases are simulated demonstrations, not observational fits.
 [![Built-in colormaps](gallery/colormaps.png)](gallery/colormaps.pdf)
 
 Use `ColorMap::storm()` for the dark-purple-to-crimson TEC palette.
+Use `ColorMap::psycho()` for the purple-red-yellow-blue-green-gray multihue ramp.
 [Compare the built-in colormaps](https://jvierine.github.io/rustplotlib/gallery/index.html).
 
 [Browse all examples](gallery/README.md).
